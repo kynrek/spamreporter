@@ -20,6 +20,17 @@ try {
   await pick('Unwanted Calls/Texts Sub', 'All Other Unwanted Calls/Texts');
   await pick('Did the call/message that you are reporting advert', P.adv);
   if (P.adv == 'Yes') await pick('Type of Property', P.cat);
+  if (P.cat == 'Other') {
+    // choosing "Other" reveals a required free-text "Type of Property, Goods, or Services" field
+    await sl(800);
+    const el = [...document.querySelectorAll('form input:not([type=hidden]),form textarea')].find(i => i.offsetParent &&
+      i.getAttribute('role') != 'combobox' &&
+      (((i.closest('[data-garden-id="forms.field"],.form-field') || i.parentElement).querySelector('label') || {}).innerText || '').startsWith('Type of Property'));
+    if (!el) throw 'noinput other';
+    const pr = el.tagName == 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+    Object.getOwnPropertyDescriptor(pr, 'value').set.call(el, P.catOther || 'Unsolicited marketing');
+    ['input', 'change', 'blur'].forEach(e => el.dispatchEvent(new Event(e, { bubbles: true })));
+  }
   await pick('Did the caller claim to be from', 'Uncertain');
   await pick('Your Phone Method', 'Wireless (cell phone/other mobile device)');
   await pick('Your Phone Type/Location', 'Residential/Personal');
