@@ -1,0 +1,7 @@
+<resources>
+    <color name="brand_navy">#1F2A44</color>
+    <color name="brand_red">#D7263D</color>
+    <color name="brand_cream">#FFF7F2</color>
+    <color name="ok_green">#2E7D32</color>
+    <color name="warn_amber">#B26A00</color>
+</resources>

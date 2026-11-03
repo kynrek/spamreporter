@@ -1,0 +1,3 @@
+<resources>
+    <string name="a11y_desc">Reads the Google Messages "Spam &amp; blocked" folder when you press Import in Spam Reporter, so RCS and SMS spam (sender, text, time) can be reported. It only reads com.google.android.apps.messaging and only while an import is running.</string>
+</resources>

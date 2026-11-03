@@ -1,0 +1,14 @@
+# build output
+build/
+.gradle/
+*.apk
+*.aab
+# machine-local / secrets
+local.properties
+*.jks
+*.keystore
+.idea/
+*.iml
+# never commit exported reports or personal data
+reports/
+*.csv

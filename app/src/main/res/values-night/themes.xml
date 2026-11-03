@@ -1,0 +1,17 @@
+<resources>
+    <style name="Theme.SpamReporter" parent="Theme.Material3.Dark.NoActionBar">
+        <item name="colorPrimary">#B6C4EA</item>
+        <item name="colorOnPrimary">#1F2A44</item>
+        <item name="colorPrimaryContainer">#2C3A5C</item>
+        <item name="colorOnPrimaryContainer">#DCE3F5</item>
+        <item name="colorSecondary">#FFB3B5</item>
+        <item name="colorSecondaryContainer">#8F1426</item>
+        <item name="colorTertiary">#8BD08F</item>
+        <item name="android:statusBarColor">#141B2D</item>
+        <item name="materialCardViewStyle">@style/Card</item>
+    </style>
+    <style name="Card" parent="Widget.Material3.CardView.Elevated">
+        <item name="cardCornerRadius">18dp</item>
+        <item name="cardElevation">2dp</item>
+    </style>
+</resources>
