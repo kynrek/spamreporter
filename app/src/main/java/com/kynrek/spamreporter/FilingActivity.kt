@@ -107,19 +107,21 @@ class FilingActivity : AppCompatActivity() {
 
     private suspend fun runQueue() {
         val p = store.profile
-        val done = store.filings().filter { it.status == "submitted" || it.status == "confirmed" }.map { it.sender to it.agency }.toSet()
-        val queue = Jobs.cases(store).flatMap { c -> c.agencies().map { c to it } }.filter { (c, a) -> (c.dashed to a) !in done }
+        val queue = Jobs.pending(store)   // only texts not yet reported to each agency
         log("${queue.size} reports to file", "FCC is limited to $FCC_PER_HOUR per hour; the app waits automatically.")
         runOnUiThread { progress.isIndeterminate = false; progress.max = maxOf(queue.size, 1) }
         for ((i, pair) in queue.withIndex()) {
             val (c, agency) = pair
+            // re-check right before filing (an earlier run, or a retry, may have just covered these texts)
+            if (c.msgs.all { store.reported(it, agency) }) continue
             val payload = Jobs.payload(c, p)
             log("${agency}: ${c.dashed}", "${i + 1} of ${queue.size} · ${c.category.name.lowercase()}")
             runOnUiThread { progress.setProgressCompat(i, true) }
             val r = try { if (agency == Agency.FCC) fileFcc(payload) else fileFtc(payload) } catch (t: Throwable) { "error:" + t.message }
             store.upsertFiling(Filing(c.dashed, agency,
                 when { r.startsWith("ok:") -> if (agency == Agency.FTC) "confirmed" else "submitted"; else -> "failed" },
-                r.removePrefix("ok:").takeIf { agency == Agency.FTC && r.startsWith("ok:") }, System.currentTimeMillis(), r))
+                r.removePrefix("ok:").takeIf { agency == Agency.FTC && r.startsWith("ok:") }, System.currentTimeMillis(), r,
+                events = c.msgs.map { it.key() }))
             delay(4000)
         }
         runOnUiThread { progress.setProgressCompat(progress.max, true) }

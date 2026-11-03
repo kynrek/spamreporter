@@ -11,7 +11,11 @@ enum class Agency { FCC, FTC }
 
 /** One received message. [ts] is epoch millis; 0 when only the date is known. */
 data class Msg(val sender: String, val ts: Long, val body: String, val source: Source, val spamFlagged: Boolean) {
-    fun key() = "$sender|$ts|${body.hashCode()}"
+    /**
+     * Identity of the text *event*: sender + minute received + normalized text. The same text seen through
+     * several routes (SMS inbox, Spam & blocked folder, notification) maps to one event, so it's never reported twice.
+     */
+    fun key() = "${Phone.digits(sender)}|${ts / 60_000}|${body.trim().replace(Regex("\\s+"), " ").hashCode()}"
     fun toJson() = JSONObject().put("sender", sender).put("ts", ts).put("body", body)
         .put("source", source.name).put("spam", spamFlagged)
     companion object {
@@ -20,15 +24,23 @@ data class Msg(val sender: String, val ts: Long, val body: String, val source: S
     }
 }
 
-/** A filing result for one sender at one agency. */
+/**
+ * One report to one agency, covering specific text events ([events] = Msg.key()s).
+ * A later text from the same sender is a new event and gets its own report.
+ */
 data class Filing(val sender: String, val agency: Agency, var status: String, var confirmation: String?,
-                  var filedAt: Long, var note: String = "") {
+                  var filedAt: Long, var note: String = "", val events: List<String> = emptyList()) {
+    /** Stable id: a retry of the same events overwrites the failed attempt instead of adding a row. */
+    val id get() = "${agency.name}|${Phone.digits(sender)}|${events.minOrNull() ?: ""}"
+    val ok get() = status == "submitted" || status == "confirmed"
     fun toJson() = JSONObject().put("sender", sender).put("agency", agency.name).put("status", status)
         .put("confirmation", confirmation ?: JSONObject.NULL).put("filedAt", filedAt).put("note", note)
+        .put("events", JSONArray(events))
     companion object {
         fun from(o: JSONObject) = Filing(o.getString("sender"), Agency.valueOf(o.getString("agency")),
             o.getString("status"), if (o.isNull("confirmation")) null else o.getString("confirmation"),
-            o.getLong("filedAt"), o.optString("note"))
+            o.getLong("filedAt"), o.optString("note"),
+            o.optJSONArray("events")?.let { a -> (0 until a.length()).map(a::getString) } ?: emptyList())
     }
 }
 
@@ -77,6 +89,7 @@ class Store(ctx: Context) {
             val old = map[m.key()]
             if (old == null) { map[m.key()] = m; added++ }
             else if (m.spamFlagged && !old.spamFlagged) map[m.key()] = old.copy(spamFlagged = true)
+            else if (old.source == Source.RCS_SPAM_FOLDER && m.source != Source.RCS_SPAM_FOLDER) map[m.key()] = m.copy(spamFlagged = true) // keep the exact timestamp
         }
         write("messages.json", JSONArray(map.values.map { it.toJson() }).toString())
         return added
@@ -94,13 +107,23 @@ class Store(ctx: Context) {
         write("categories.json", JSONObject(m.mapValues { it.value.name }).toString()) }
 
     @Synchronized fun filings(): MutableList<Filing> = readArr("filings.json").let { a -> (0 until a.length()).map { Filing.from(a.getJSONObject(it)) }.toMutableList() }
+    /**
+     * Has this text already been reported to [a]? Reports from before per-event tracking (no [Filing.events])
+     * cover every text from that sender received up to the filing time.
+     */
+    fun reported(m: Msg, a: Agency, fs: List<Filing> = filings()) = fs.any { f -> f.ok && f.agency == a &&
+        (m.key() in f.events || (f.events.isEmpty() && Phone.digits(f.sender) == Phone.digits(m.sender) && m.ts <= f.filedAt)) }
+
     @Synchronized fun upsertFiling(fl: Filing) {
-        val all = filings(); all.removeAll { it.sender == fl.sender && it.agency == fl.agency }; all.add(fl)
+        val all = filings(); all.removeAll { it.id == fl.id }; all.add(fl)
         write("filings.json", JSONArray(all.map { it.toJson() }).toString())
     }
     /** Called by the notification listener when an FCC ticket email arrives. */
     @Synchronized fun attachFccTicket(senderDigits: String, ticket: String) {
-        val fl = filings().firstOrNull { it.agency == Agency.FCC && Phone.digits(it.sender) == senderDigits } ?: return
+        val mine = filings().filter { it.agency == Agency.FCC && Phone.digits(it.sender) == senderDigits }
+        if (mine.any { it.confirmation == ticket }) return
+        // tickets arrive in filing order: give it to the oldest submitted report for this sender still waiting on one
+        val fl = mine.filter { it.status == "submitted" && it.confirmation == null }.minByOrNull { it.filedAt } ?: return
         fl.confirmation = ticket; fl.status = "confirmed"; upsertFiling(fl)
     }
 }

@@ -25,7 +25,8 @@ class ReviewActivity : AppCompatActivity() {
         super.onCreate(b)
         val store = Store(this)
         val fmt = SimpleDateFormat("MMM d, h:mm a", Locale.US)
-        val filed = store.filings().groupBy { it.sender }
+        val fs = store.filings()
+        val filed = fs.filter { it.ok }.groupBy { it.sender }
         val cases = Jobs.cases(store)
         screen("Review senders", "${cases.size} spam senders") {
             add(card { addView(text("Commercial → FCC and FTC. Political and survey texts aren't Do Not Call violations, so they go to the FCC " +
@@ -33,10 +34,13 @@ class ReviewActivity : AppCompatActivity() {
             for (c in cases) add(card {
                 addView(LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL
                     addView(text(c.dashed, 17f, true), LinearLayout.LayoutParams(0, -2, 1f))
+                    val new = c.msgs.count { m -> c.agencies().any { !store.reported(m, it, fs) } }
+                    if (new > 0 && filed[c.dashed] != null) addView(chip("$new new", Ui.RED), LinearLayout.LayoutParams(-2, -2).apply { leftMargin = dp(4) })
                     filed[c.dashed]?.forEach { addView(chip("${it.agency} ${it.confirmation ?: it.status}", GREEN), LinearLayout.LayoutParams(-2, -2).apply { leftMargin = dp(4) }) }
                 })
                 addView(text("${c.msgs.size} message${if (c.msgs.size == 1) "" else "s"} · last ${fmt.format(Date(c.last.ts))}", 12f, alpha = 0.6f))
-                for (m in c.msgs.takeLast(3)) addView(text("${fmt.format(Date(m.ts))} · ${if (m.source == Source.RCS_SPAM_FOLDER) "RCS" else m.source.name}\n${m.body.take(260)}",
+                for (m in c.msgs.takeLast(3)) addView(text("${fmt.format(Date(m.ts))} · ${if (m.source == Source.RCS_SPAM_FOLDER) "RCS" else m.source.name}" +
+                    "${if (c.agencies().isNotEmpty() && c.agencies().all { store.reported(m, it, fs) }) " · reported" else ""}\n${m.body.take(260)}",
                     13f, alpha = 0.85f), lp(top = dp(8)))
                 addView(ChipGroup(context).apply {
                     isSingleSelection = true; isSelectionRequired = true

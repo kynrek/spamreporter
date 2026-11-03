@@ -39,15 +39,15 @@ class MainActivity : AppCompatActivity() {
         val cases = Jobs.cases(store)
         val f = store.filings()
         val rcs = msgs.count { it.source == Source.RCS_SPAM_FOLDER }
-        val filedN = f.count { it.status != "failed" }
-        val queued = cases.sumOf { it.agencies().size }
+        val filedN = f.count { it.ok }
+        val left = Jobs.pending(store).size
         val smsOk = ContextCompat.checkSelfPermission(this, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED
         fun st(ok: Boolean, yes: String, no: String, noColor: Int = AMBER) = if (ok) yes to GREEN else no to noColor
 
         screen("Spam Reporter", back = false) {
             add(hero("Spam Reporter", "Report spam texts to the FCC and FTC — from your phone, in a few taps."))
             add(statsRow(stat("${cases.size}", "spam senders", NAVY), stat("$filedN", "reports filed", GREEN),
-                stat("${(queued - filedN).coerceAtLeast(0)}", "left to file", RED)), dp(8))
+                stat("$left", "left to file", RED)), dp(8))
 
             add(section("Set up"))
             add(step(1, "Your info & attestation", if (p.complete()) "${p.first} ${p.last} · ${p.phoneDashed()}" else "Name, address, and the number that got the texts",
@@ -65,8 +65,8 @@ class MainActivity : AppCompatActivity() {
             add(step(5, "Review senders", "${cases.count { it.category == Category.COMMERCIAL }} commercial · " +
                 "${cases.count { it.category == Category.POLITICAL }} political · ${cases.count { it.category == Category.SURVEY }} survey",
                 if (cases.isEmpty()) null else "Check" to NAVY) { go(ReviewActivity::class.java) })
-            add(step(6, "File reports", "FCC for every sender, FTC for commercial ones",
-                if (!p.attested) "Attest first" to GREY else st(queued > 0 && filedN >= queued, "All filed", "${(queued - filedN).coerceAtLeast(0)} to go")) {
+            add(step(6, "File reports", "New texts only — anything already reported is skipped",
+                if (!p.attested) "Attest first" to GREY else st(left == 0 && filedN > 0, "All filed", if (left == 0) "Nothing yet" else "$left to go")) {
                 if (!p.complete() || !p.attested) toast("Finish step 1 first") else go(FilingActivity::class.java) })
             add(step(7, "Export confirmation report", "CSV + Markdown with every ticket and report number", null) { export() })
 

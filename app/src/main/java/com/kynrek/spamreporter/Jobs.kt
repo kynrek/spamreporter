@@ -9,8 +9,8 @@ import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.*
 
-/** One sender to report, with everything both agencies' forms need. */
-data class SenderCase(val sender: String, val msgs: List<Msg>, val category: Category) {
+/** One sender's texts (all of them, or — from [Jobs.pending] — only the ones not yet reported). */
+data class SenderCase(val sender: String, val msgs: List<Msg>, val category: Category, val prior: List<Filing> = emptyList()) {
     val digits = Phone.digits(sender)
     val dashed = Phone.dashed(sender)
     val last: Msg get() = msgs.maxBy { it.ts }
@@ -50,6 +50,19 @@ object Jobs {
             .sortedByDescending { it.last.ts }
     }
 
+    /** One report to file: [case].msgs holds only texts not yet reported to [agency]. */
+    data class Pending(val case: SenderCase, val agency: Agency)
+
+    /** Everything still to file. A sender that texts again after being reported produces a new, separate report. */
+    fun pending(store: Store): List<Pending> {
+        val fs = store.filings()
+        return cases(store).flatMap { c -> c.agencies().mapNotNull { a ->
+            val fresh = c.msgs.filter { !store.reported(it, a, fs) }
+            if (fresh.isEmpty()) null
+            else Pending(c.copy(msgs = fresh, prior = fs.filter { it.ok && it.agency == a && Phone.digits(it.sender) == c.digits }), a)
+        } }
+    }
+
     /** Strip characters the FCC help desk rejects (styled math letters, emoji) — keeps the text readable. */
     private fun clean(s: String) = java.text.Normalizer.normalize(s, java.text.Normalizer.Form.NFKC)
         .replace(Regex("[\\x{1F000}-\\x{1FFFF}\\x{2600}-\\x{27BF}\\x{FE0F}]"), "").replace("\r", "")
@@ -65,7 +78,9 @@ object Jobs {
             Category.POLITICAL -> "On $when_, my wireless number ${p.phoneDashed()} received unsolicited political text message(s) from ${c.dashed}. " +
                 "I never gave this sender consent to text me. I am reporting this as an unwanted political text; I am not alleging it is a telemarketing call."
             else -> "On $when_, my wireless number ${p.phoneDashed()} received an unsolicited survey/poll text message from ${c.dashed}. I never gave this sender consent to text me."
-        } + if (n > 1) " $n messages total; most recent is listed as the date of issue." else ""
+        } + (if (n > 1) " $n messages total; most recent is listed as the date of issue." else "") +
+            (c.prior.maxByOrNull { it.filedAt }?.let { " This is a new text received after my earlier complaint about this sender" +
+                (it.confirmation?.let { t -> " (ticket/report $t)" } ?: "") + "; the sender continued texting me." } ?: "")
         val add = clean("Message text as received:\n" + c.msgs.joinToString("\n") { "[${mt.format(Date(it.ts))}] ${it.body}" }).take(1900)
         val kind = when (c.category) { Category.COMMERCIAL -> "DNC telemarketing"; Category.POLITICAL -> "Unwanted political"; else -> "Unwanted survey" }
         val (ftcCat, ftcSub) = Classifier.ftcCategory(bodies)
@@ -90,14 +105,16 @@ object Jobs {
     /** CSV + Markdown confirmation report into Downloads/SpamReporter. Returns the CSV uri. */
     fun exportReport(ctx: Context, store: Store): Uri? {
         val cases = cases(store).associateBy { it.digits }
+        val byKey = store.messages().associateBy { it.key() }
         val fmt = SimpleDateFormat("yyyy-MM-dd HH:mm z", Locale.US)
         val p = store.profile
-        val rows = store.filings().sortedWith(compareBy({ it.agency }, { it.sender }))
+        val rows = store.filings().sortedWith(compareBy({ it.agency }, { it.sender }, { it.filedAt }))
         val csv = StringBuilder("agency,category,sender_number,texted_number,text_dates,confirmation_number,filed_at,status\n")
         val md = StringBuilder("# Spam text report confirmations — ${p.phoneDashed()}\n\n| Agency | Category | Sender | Text date(s) | Confirmation # | Filed | Status |\n|---|---|---|---|---|---|---|\n")
         for (f in rows) {
             val c = cases[Phone.digits(f.sender)]
-            val dates = c?.msgs?.joinToString("; ") { mt.format(Date(it.ts)) } ?: ""
+            val covered = if (f.events.isNotEmpty()) f.events.mapNotNull(byKey::get) else c?.msgs?.filter { it.ts <= f.filedAt } ?: emptyList()
+            val dates = covered.sortedBy { it.ts }.joinToString("; ") { mt.format(Date(it.ts)) }
             val cat = c?.category?.name?.lowercase() ?: ""
             csv.append(listOf(f.agency, cat, f.sender, p.phoneDashed(), dates, f.confirmation ?: "", fmt.format(Date(f.filedAt)), f.status)
                 .joinToString(",") { "\"" + it.toString().replace("\"", "\"\"") + "\"" }).append('\n')
