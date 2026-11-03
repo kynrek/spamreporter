@@ -15,6 +15,8 @@ object NetPolicy {
     /** Agency hosts: page loads + form submissions. */
     private val agencyHosts = setOf(
         "consumercomplaints.fcc.gov",      // FCC complaint center (FCC's Zendesk instance)
+        "fcctest.zendesk.com",             // the same FCC Zendesk account's own host (HelpCenter.account.subdomain = "fcctest",
+                                           // environment "production"); sign-in/session hand-off goes through /access here
         "reportfraud.ftc.gov",             // FTC ReportFraud
         "www.donotcall.gov", "www2.donotcall.gov", // FTC DNC hand-off link for text complaints
     )
@@ -38,6 +40,10 @@ object NetPolicy {
         val h = uri?.host?.lowercase() ?: return true
         return h in agencyHosts || method.equals("GET", true) || h == "challenges.cloudflare.com"
     }
+
+    /** Debug builds log the *host* of blocked requests (never paths, queries or bodies) to tune the allowlist. */
+    var debug = false
+    fun note(uri: Uri?) { if (debug) android.util.Log.d("NetPolicy", "blocked host=${uri?.scheme}://${uri?.host}") }
 
     fun blocked() = WebResourceResponse("text/plain", "utf-8", 403, "Blocked by Spam Reporter", emptyMap(), ByteArrayInputStream(ByteArray(0)))
 

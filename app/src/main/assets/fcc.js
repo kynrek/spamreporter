@@ -44,7 +44,8 @@ try {
   if (has('Was the business name provided at the')) await pick('Was the business name provided at the', P.start || 'No');
   await pick('State', U.stateName);
   await pick('Filing on Behalf', 'No');
-  set('Your email address', U.email); set('Subject', P.subject);
+  if (inp('Your email address')) set('Your email address', U.email);   // absent when signed in to an FCC account
+  set('Subject', P.subject);
   set('Telephone Number Where the Unwanted', U.phone);
   set('Date of Your Issue', P.date); if (P.time) set('Time of Your Issue', P.time);
   set('Caller ID Number', P.sender);

@@ -21,7 +21,12 @@ a report of every ticket and report number.
    Political and survey texts aren't Do Not Call violations, so they go to the FCC only and are labeled that way.
 4. **File.** The app fills the official forms in a WebView you can watch: the FCC Consumer Complaint Center, and FTC ReportFraud
    using the donotcall.gov text hand-off. It respects the FCC's hourly limit on anonymous complaints.
-5. **Export.** A CSV and Markdown report goes to `Downloads/SpamReporter`, with each confirmation number, when each text was received,
+5. **Optional FCC sign-in.** The FCC limits complaints from people who aren't signed in to roughly 10 per hour.
+   - **How it works:** you sign in on the FCC's own page inside the app. The app never sees, stores or types your password, and your password manager can fill it in.
+   - **How long it lasts:** the FCC keeps you signed in for about 8 hours. The app shows when that ends, and **Sign out** ends it immediately on the FCC's side too.
+   - **While signed in:** there's no hourly limit, ticket numbers appear straight away, and every complaint shows up under *My requests* on the FCC site.
+   - Without signing in, everything still works; filing is just paced to about 8 per hour.
+6. **Export.** A CSV and Markdown report goes to `Downloads/SpamReporter`, with each confirmation number, when each text was received,
    the sender, the number that was texted, and when the report was filed.
 
 ## Privacy and security

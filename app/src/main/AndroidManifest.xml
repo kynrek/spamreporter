@@ -25,6 +25,7 @@
         </activity>
         <activity android:name=".ProfileActivity" />
         <activity android:name=".ReviewActivity" />
+        <activity android:name=".FccSignInActivity" android:exported="false" />
         <activity android:name=".FilingActivity" android:configChanges="orientation|screenSize" />
 
         <!-- RCS method 1: read Google Messages' "Spam & blocked" folder (existing messages, RCS + SMS) -->

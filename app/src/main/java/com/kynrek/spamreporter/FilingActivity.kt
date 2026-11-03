@@ -44,7 +44,7 @@ import java.util.*
  * submit, and the report number is read from the confirmation page.
  */
 class FilingActivity : AppCompatActivity() {
-    companion object { const val FCC_PER_HOUR = 8; const val FCC_URL = "https://consumercomplaints.fcc.gov/hc/en-us/requests/new?ticket_form_id=39744" }
+    companion object { const val FCC_PER_HOUR = 8; const val SIGNED_IN_GAP_MS = 20_000L; const val FCC_URL = "https://consumercomplaints.fcc.gov/hc/en-us/requests/new?ticket_form_id=39744" }
 
     private lateinit var web: WebView
     private lateinit var status: TextView
@@ -60,6 +60,7 @@ class FilingActivity : AppCompatActivity() {
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
+        NetPolicy.debug = applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0
         store = Store(this)
         web = WebView(this).apply {
             settings.javaScriptEnabled = true; settings.domStorageEnabled = true
@@ -72,8 +73,8 @@ class FilingActivity : AppCompatActivity() {
                 override fun onPageFinished(v: WebView, url: String) { pages.trySend(url) }
                 // Block every request that isn't to an agency (or static code the agency form needs).
                 override fun shouldInterceptRequest(v: WebView, r: WebResourceRequest): WebResourceResponse? =
-                    if (NetPolicy.allowed(r.url) && NetPolicy.allowedMethod(r.url, r.method)) null else NetPolicy.blocked()
-                override fun shouldOverrideUrlLoading(v: WebView, r: WebResourceRequest) = !NetPolicy.allowed(r.url)
+                    if (NetPolicy.allowed(r.url) && NetPolicy.allowedMethod(r.url, r.method)) null else { NetPolicy.note(r.url); NetPolicy.blocked() }
+                override fun shouldOverrideUrlLoading(v: WebView, r: WebResourceRequest) = (!NetPolicy.allowed(r.url)).also { if (it) NetPolicy.note(r.url) }
             }
         }
         lateinit var progress: LinearProgressIndicator
@@ -100,7 +101,9 @@ class FilingActivity : AppCompatActivity() {
         job?.cancel()
         // leave nothing behind in the WebView: cookies, cache, storage, form data
         web.clearCache(true); web.clearFormData(); web.clearHistory()
-        WebStorage.getInstance().deleteAllData(); CookieManager.getInstance().removeAllCookies(null)
+        WebStorage.getInstance().deleteAllData()
+        // keep cookies only while the user has chosen to stay signed in to the FCC; otherwise leave nothing behind
+        if (!FccAccount.likelySignedIn(this)) CookieManager.getInstance().removeAllCookies(null)
         web.destroy(); super.onDestroy()
     }
     private fun log(s: String, detail: String = "") { runOnUiThread { status.text = s; sub.text = detail } }
@@ -108,7 +111,14 @@ class FilingActivity : AppCompatActivity() {
     private suspend fun runQueue() {
         val p = store.profile
         val queue = Jobs.pending(store)   // only texts not yet reported to each agency
-        log("${queue.size} reports to file", "FCC is limited to $FCC_PER_HOUR per hour; the app waits automatically.")
+        if (FccAccount.likelySignedIn(this) && queue.any { it.agency == Agency.FCC }) {
+            log("Checking FCC sign-in…")
+            val u = runCatching { load(FccAccount.MY_REQUESTS) }.getOrDefault("")
+            if (!FccAccount.isSignedInPage(u)) FccAccount.markSignedOut(this)
+        }
+        log("${queue.size} reports to file", if (FccAccount.likelySignedIn(this))
+            "Signed in to the FCC (${FccAccount.untilText(this)}) — no hourly limit."
+            else "Not signed in to the FCC: limited to $FCC_PER_HOUR per hour; the app waits automatically. Sign in on the home screen to go faster.")
         runOnUiThread { progress.isIndeterminate = false; progress.max = maxOf(queue.size, 1) }
         for ((i, pair) in queue.withIndex()) {
             val (c, agency) = pair
@@ -119,8 +129,8 @@ class FilingActivity : AppCompatActivity() {
             runOnUiThread { progress.setProgressCompat(i, true) }
             val r = try { if (agency == Agency.FCC) fileFcc(payload) else fileFtc(payload) } catch (t: Throwable) { "error:" + t.message }
             store.upsertFiling(Filing(c.dashed, agency,
-                when { r.startsWith("ok:") -> if (agency == Agency.FTC) "confirmed" else "submitted"; else -> "failed" },
-                r.removePrefix("ok:").takeIf { agency == Agency.FTC && r.startsWith("ok:") }, System.currentTimeMillis(), r,
+                when { !r.startsWith("ok:") -> "failed"; r.length > 3 -> "confirmed"; else -> "submitted" },
+                r.removePrefix("ok:").takeIf { r.startsWith("ok:") && it.isNotEmpty() }, System.currentTimeMillis(), r,
                 events = c.msgs.map { it.key() }))
             delay(4000)
         }
@@ -142,8 +152,10 @@ class FilingActivity : AppCompatActivity() {
     private fun saveFccTimes(l: List<Long>) = getSharedPreferences("pace", MODE_PRIVATE).edit().putString("fcc", l.joinToString(",")).apply()
 
     private suspend fun fileFcc(payload: JSONObject): String {
-        // pacing: at most FCC_PER_HOUR submissions in any rolling hour
-        while (true) {
+        val signedIn = FccAccount.likelySignedIn(this)
+        // pacing: signed in -> a polite gap between complaints; anonymous -> at most FCC_PER_HOUR in any rolling hour
+        if (signedIn) fccTimes().maxOrNull()?.let { val w = it + SIGNED_IN_GAP_MS - System.currentTimeMillis(); if (w > 0) delay(w) }
+        while (!signedIn) {
             val t = fccTimes().filter { it > System.currentTimeMillis() - 3_600_000 }
             if (t.size < FCC_PER_HOUR) break
             val wait = t.min() + 3_600_000 - System.currentTimeMillis()
@@ -157,9 +169,12 @@ class FilingActivity : AppCompatActivity() {
         tap((r.getDouble("x") * dpr).toFloat(), (r.getDouble("y") * dpr).toFloat())
         val url = withTimeout(30_000) { pages.receive() }
         delay(1500)
-        return if (url.contains("return_to")) {
-            saveFccTimes(fccTimes() + System.currentTimeMillis()); "ok:"
+        // signed in: lands on /hc/en-us/requests/<ticket>; anonymous: home page with return_to, ticket arrives by email
+        val ticket = Regex("/hc/[a-z-]+/requests/(\\d+)").find(url)?.groupValues?.get(1)
+        return if (ticket != null || url.contains("return_to")) {
+            saveFccTimes((fccTimes() + System.currentTimeMillis()).takeLast(50)); "ok:" + (ticket ?: "")
         } else {
+            if (FccAccount.isSignInPage(url)) FccAccount.markSignedOut(this)
             val limited = evalSync("document.body.innerText.includes('allowed per hour')") == "true"
             if (limited) { saveFccTimes(List(FCC_PER_HOUR) { System.currentTimeMillis() }); "error:rate limited (will retry next run)" }
             else "error:not submitted ($url)"

@@ -53,26 +53,32 @@ class MainActivity : AppCompatActivity() {
             add(step(1, "Your info & attestation", if (p.complete()) "${p.first} ${p.last} · ${p.phoneDashed()}" else "Name, address, and the number that got the texts",
                 st(p.complete() && p.attested, "Done", if (p.complete()) "Attest" else "Required", RED)) { go(ProfileActivity::class.java) })
 
+            add(step(2, "FCC account (optional)", if (FccAccount.likelySignedIn(this@MainActivity))
+                    "Signed in ${FccAccount.untilText(this@MainActivity)} · tap to sign out"
+                    else "Sign in to file without the FCC's hourly limit. Lasts ~${FccAccount.SESSION_HOURS} hours.",
+                if (FccAccount.likelySignedIn(this@MainActivity)) "Signed in" to GREEN else "Optional" to GREY) { go(FccSignInActivity::class.java) })
+
             add(section("Collect messages"))
-            add(step(2, "Import SMS & MMS", "${msgs.count { it.source == Source.SMS || it.source == Source.MMS }} messages read from your inbox",
+            add(step(3, "Import SMS & MMS", "${msgs.count { it.source == Source.SMS || it.source == Source.MMS }} messages read from your inbox",
                 st(smsOk && msgs.isNotEmpty(), "Imported", "Tap to import")) { importSms() })
-            add(step(3, "Import Spam & blocked folder", "Reads RCS chats from Google Messages (${rcs} so far)",
+            add(step(4, "Import Spam & blocked folder", "Reads RCS chats from Google Messages (${rcs} so far)",
                 st(rcs > 0, "$rcs RCS", if (a11yEnabled()) "Ready" else "Needs access")) { importSpamFolder() })
-            add(step(4, "Capture new spam & FCC tickets", "Saves new spam as it arrives, and FCC ticket numbers from email",
+            add(step(5, "Capture new spam & FCC tickets", "Saves new spam as it arrives, and FCC ticket numbers from email",
                 st(listenerEnabled(), "On", "Off", GREY)) { startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) })
 
             add(section("Report"))
-            add(step(5, "Review senders", "${cases.count { it.category == Category.COMMERCIAL }} commercial · " +
+            add(step(6, "Review senders", "${cases.count { it.category == Category.COMMERCIAL }} commercial · " +
                 "${cases.count { it.category == Category.POLITICAL }} political · ${cases.count { it.category == Category.SURVEY }} survey",
                 if (cases.isEmpty()) null else "Check" to NAVY) { go(ReviewActivity::class.java) })
-            add(step(6, "File reports", "New texts only — anything already reported is skipped",
+            add(step(7, "File reports", "New texts only — anything already reported is skipped",
                 if (!p.attested) "Attest first" to GREY else st(left == 0 && filedN > 0, "All filed", if (left == 0) "Nothing yet" else "$left to go")) {
                 if (!p.complete() || !p.attested) toast("Finish step 1 first") else go(FilingActivity::class.java) })
-            add(step(7, "Export confirmation report", "CSV + Markdown with every ticket and report number", null) { export() })
+            add(step(8, "Export confirmation report", "CSV + Markdown with every ticket and report number", null) { export() })
 
             add(section("Privacy"))
             add(text("Everything stays on this phone, encrypted with a key in the Android Keystore. The app has no analytics or " +
-                "servers of its own; it only connects to fcc.gov, ftc.gov and donotcall.gov, and blocks trackers on those pages.", 13f, alpha = 0.7f))
+                "servers of its own; it only connects to fcc.gov, ftc.gov and donotcall.gov, and blocks trackers on those pages. " +
+                "If you sign in to the FCC, the app never sees your password.", 13f, alpha = 0.7f))
             add(MaterialButton(context, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
                 text = "Delete all my data"; setTextColor(RED); setOnClickListener { confirmWipe() } }, dp(8))
             MessagesAccessibilityService.lastStatus.takeIf { it.isNotBlank() && it != "idle" }?.let { add(text("Spam-folder import: $it", 12f, alpha = 0.5f), dp(12)) }
@@ -90,9 +96,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun confirmWipe() = MaterialAlertDialogBuilder(this).setTitle("Delete all data?")
-        .setMessage("Removes your profile, imported messages, and filing history from this phone. Reports you already filed stay with the agencies.")
+        .setMessage("Removes your profile, imported messages and filing history from this phone, and signs you out of the FCC. Reports you already filed stay with the agencies.")
         .setNegativeButton("Cancel", null)
-        .setPositiveButton("Delete") { _, _ -> store.wipeAll(); getSharedPreferences("pace", MODE_PRIVATE).edit().clear().apply(); toast("All data deleted"); render() }
+        .setPositiveButton("Delete") { _, _ -> store.wipeAll(); getSharedPreferences("pace", MODE_PRIVATE).edit().clear().apply(); FccAccount.clearLocal(this); toast("All data deleted"); render() }
         .show()
 
     private fun importSms() {
