@@ -26,7 +26,11 @@ a report of every ticket and report number.
    - **How long it lasts:** the FCC keeps you signed in for about 8 hours. The app shows when that ends, and **Sign out** ends it immediately on the FCC's side too.
    - **While signed in:** there's no hourly limit, ticket numbers appear straight away, and every complaint shows up under *My requests* on the FCC site.
    - Without signing in, everything still works; filing is just paced to about 8 per hour.
-6. **Export.** A CSV and Markdown report goes to `Downloads/SpamReporter`, with each confirmation number, when each text was received,
+6. **No duplicates.**
+   - **What a report covers:** every report records the texts it included. It also covers any text from that sender received up to the newest one it included.
+   - **New texts:** a sender who texts again afterwards gets a new, separate report. Already-reported texts are never queued again.
+   - **Filed elsewhere:** reports filed outside the app or on another phone can be loaded with **Import filing history**. Every export also writes this history file.
+7. **Export.** A CSV and Markdown report goes to `Downloads/SpamReporter`, with each confirmation number, when each text was received,
    the sender, the number that was texted, and when the report was filed.
 
 ## Privacy and security

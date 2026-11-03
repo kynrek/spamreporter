@@ -131,6 +131,8 @@ object Jobs {
             return uri
         }
         save("spam-report-$stamp.md", "text/markdown", md.toString())
+        // the app's own filing history (import it on another install so nothing is filed twice)
+        save("spam-report-history-$stamp.json", "application/json", store.exportHistory())
         return save("spam-report-$stamp.csv", "text/csv", csv.toString())
     }
 }

@@ -131,7 +131,7 @@ class FilingActivity : AppCompatActivity() {
             store.upsertFiling(Filing(c.dashed, agency,
                 when { !r.startsWith("ok:") -> "failed"; r.length > 3 -> "confirmed"; else -> "submitted" },
                 r.removePrefix("ok:").takeIf { r.startsWith("ok:") && it.isNotEmpty() }, System.currentTimeMillis(), r,
-                events = c.msgs.map { it.key() }))
+                events = c.msgs.map { it.key() }, coversUntil = c.msgs.maxOf { it.ts }))
             delay(4000)
         }
         runOnUiThread { progress.setProgressCompat(progress.max, true) }

@@ -73,7 +73,9 @@ class MainActivity : AppCompatActivity() {
             add(step(7, "File reports", "New texts only — anything already reported is skipped",
                 if (!p.attested) "Attest first" to GREY else st(left == 0 && filedN > 0, "All filed", if (left == 0) "Nothing yet" else "$left to go")) {
                 if (!p.complete() || !p.attested) toast("Finish step 1 first") else go(FilingActivity::class.java) })
-            add(step(8, "Export confirmation report", "CSV + Markdown with every ticket and report number", null) { export() })
+            add(step(8, "Export confirmation report", "CSV + Markdown with every ticket and report number, plus a history file", null) { export() })
+            add(step(9, "Import filing history", "Reports filed outside the app or on another phone — so they're never filed twice",
+                f.count { it.note == "imported" }.let { if (it > 0) "$it imported" to GREEN else null }) { pickHistory.launch(arrayOf("application/json", "text/plain", "*/*")) })
 
             add(section("Privacy"))
             add(text("Everything stays on this phone, encrypted with a key in the Android Keystore. The app has no analytics or " +
@@ -83,6 +85,17 @@ class MainActivity : AppCompatActivity() {
                 text = "Delete all my data"; setTextColor(RED); setOnClickListener { confirmWipe() } }, dp(8))
             MessagesAccessibilityService.lastStatus.takeIf { it.isNotBlank() && it != "idle" }?.let { add(text("Spam-folder import: $it", 12f, alpha = 0.5f), dp(12)) }
         }
+    }
+
+    private val pickHistory = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@registerForActivityResult
+        val r = runCatching { store.importHistory(contentResolver.openInputStream(uri)!!.bufferedReader().readText()) }
+        r.onSuccess { (added, known) -> MaterialAlertDialogBuilder(this).setTitle("Filing history imported")
+                .setMessage("$added reports added" + (if (known > 0) ", $known were already known" else "") + ".\n\n" +
+                    "Texts covered by these reports won't be filed again. New texts from the same senders will get their own reports.\n\n" +
+                    "You can delete the history file now if you like.")
+                .setPositiveButton("OK", null).show(); render() }
+         .onFailure { toast("Couldn't read that file: ${it.message}") }
     }
 
     private fun go(c: Class<*>) = startActivity(Intent(this, c))
