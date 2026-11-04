@@ -5,6 +5,11 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- Android 11+ hides other apps unless declared: needed to open Google Messages for the spam-folder scan. -->
+    <queries>
+        <package android:name="com.google.android.apps.messaging" />
+    </queries>
+
     <!-- No analytics, crash reporting, or ad SDKs are included. -->
     <application
         android:allowBackup="false"
@@ -26,11 +31,15 @@
         <activity android:name=".ProfileActivity" />
         <activity android:name=".ReviewActivity" />
         <activity android:name=".FccSignInActivity" android:exported="false" />
+        <activity android:name=".SettingsActivity" android:exported="false" />
+        <activity android:name=".MarkSpamActivity" android:exported="false" />
+        <activity android:name=".HistoryActivity" android:exported="false" />
         <activity android:name=".FilingActivity" android:configChanges="orientation|screenSize" />
 
-        <!-- RCS method 1: read Google Messages' "Spam & blocked" folder (existing messages, RCS + SMS) -->
+        <!-- Optional (Settings, off by default; enabled at runtime). RCS method 1: read Google Messages' "Spam & blocked" folder (existing messages, RCS + SMS) -->
         <service
             android:name=".MessagesAccessibilityService"
+            android:enabled="false"
             android:exported="false"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
             <intent-filter><action android:name="android.accessibilityservice.AccessibilityService" /></intent-filter>

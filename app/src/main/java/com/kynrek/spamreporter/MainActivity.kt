@@ -38,43 +38,58 @@ class MainActivity : AppCompatActivity() {
         val msgs = store.messages()
         val cases = Jobs.cases(store)
         val f = store.filings()
-        val rcs = msgs.count { it.source == Source.RCS_SPAM_FOLDER }
         val filedN = f.count { it.ok }
         val left = Jobs.pending(store).size
         val smsOk = ContextCompat.checkSelfPermission(this, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED
         fun st(ok: Boolean, yes: String, no: String, noColor: Int = AMBER) = if (ok) yes to GREEN else no to noColor
 
-        screen("Spam Reporter", back = false) {
+        val scanOn = Sources.folderScan(this)
+        val capOn = Sources.capture(this)
+        var n = 0
+        screen("Spam Reporter", back = false, onSettings = { go(SettingsActivity::class.java) }) {
             add(hero("Spam Reporter", "Report spam texts to the FCC and FTC — from your phone, in a few taps."))
             add(statsRow(stat("${cases.size}", "spam senders", NAVY), stat("$filedN", "reports filed", GREEN),
                 stat("$left", "left to file", RED)), dp(8))
+            add(MaterialButton(context).apply {
+                text = "Scan for new spam"; textSize = 16f; minimumHeight = dp(56)
+                setOnClickListener { scanAll() } }, dp(12))
+            if (left > 0) add(MaterialButton(context).apply {
+                text = "File $left new report${if (left == 1) "" else "s"}"; textSize = 16f; minimumHeight = dp(56)
+                backgroundTintList = android.content.res.ColorStateList.valueOf(RED)
+                setOnClickListener { fileReports(p) } }, dp(4))
+            add(text(if (scanOn) "Scanning reads your inbox, then opens Google Messages to read the Spam & blocked folder (RCS included)."
+                else "Scanning reads your SMS & MMS inbox; then tick the spam senders under \"Choose spam senders\".", 12f, alpha = 0.6f), dp(4))
 
             add(section("Set up"))
-            add(step(1, "Your info & attestation", if (p.complete()) "${p.first} ${p.last} · ${p.phoneDashed()}" else "Name, address, and the number that got the texts",
+            add(step(++n, "Your info & attestation", if (p.complete()) "${p.first} ${p.last} · ${p.phoneDashed()}" else "Name, address, and the number that got the texts",
                 st(p.complete() && p.attested, "Done", if (p.complete()) "Attest" else "Required", RED)) { go(ProfileActivity::class.java) })
 
-            add(step(2, "FCC account (optional)", if (FccAccount.likelySignedIn(this@MainActivity))
+            add(step(++n, "FCC account (optional)", if (FccAccount.likelySignedIn(this@MainActivity))
                     "Signed in ${FccAccount.untilText(this@MainActivity)} · tap to sign out"
                     else "Sign in to file without the FCC's hourly limit. Lasts ~${FccAccount.SESSION_HOURS} hours.",
                 if (FccAccount.likelySignedIn(this@MainActivity)) "Signed in" to GREEN else "Optional" to GREY) { go(FccSignInActivity::class.java) })
 
             add(section("Collect messages"))
-            add(step(3, "Import SMS & MMS", "${msgs.count { it.source == Source.SMS || it.source == Source.MMS }} messages read from your inbox",
+            add(step(++n, "Import SMS & MMS", "${msgs.count { it.source == Source.SMS || it.source == Source.MMS }} messages read from your inbox",
                 st(smsOk && msgs.isNotEmpty(), "Imported", "Tap to import")) { importSms() })
-            add(step(4, "Import Spam & blocked folder", "Reads RCS chats from Google Messages (${rcs} so far)",
-                st(rcs > 0, "$rcs RCS", if (a11yEnabled()) "Ready" else "Needs access")) { importSpamFolder() })
-            add(step(5, "Capture new spam & FCC tickets", "Saves new spam as it arrives, and FCC ticket numbers from email",
-                st(listenerEnabled(), "On", "Off", GREY)) { startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) })
+            if (scanOn) add(step(++n, "Scan Spam & blocked folder", getSharedPreferences("scan", MODE_PRIVATE).getString("last", null)
+                    ?.replaceFirstChar { it.uppercase() } ?: "Reads spam-flagged chats (RCS included) from Google Messages",
+                if (!a11yEnabled()) "Needs access" to AMBER else if (!MessagesAccessibilityService.connected) "Turn access off & on" to RED else "Tap to scan" to NAVY) { importSpamFolder() })
+            add(step(++n, "Choose spam senders", if (scanOn) "Add spam that Google Messages didn't flag" else "Tick which senders are spam",
+                if (cases.isEmpty()) "Start here" to NAVY else null) { go(MarkSpamActivity::class.java) })
+            if (capOn) add(step(++n, "Capture new spam & FCC tickets", "Saves new texts as they arrive, and FCC ticket numbers from email",
+                st(listenerEnabled(), "On", "Needs access", AMBER)) { startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) })
 
             add(section("Report"))
-            add(step(6, "Review senders", "${cases.count { it.category == Category.COMMERCIAL }} commercial · " +
+            add(step(++n, "Review senders", "${cases.count { it.category == Category.COMMERCIAL }} commercial · " +
                 "${cases.count { it.category == Category.POLITICAL }} political · ${cases.count { it.category == Category.SURVEY }} survey",
                 if (cases.isEmpty()) null else "Check" to NAVY) { go(ReviewActivity::class.java) })
-            add(step(7, "File reports", "New texts only — anything already reported is skipped",
-                if (!p.attested) "Attest first" to GREY else st(left == 0 && filedN > 0, "All filed", if (left == 0) "Nothing yet" else "$left to go")) {
-                if (!p.complete() || !p.attested) toast("Finish step 1 first") else go(FilingActivity::class.java) })
-            add(step(8, "Export confirmation report", "CSV + Markdown with every ticket and report number, plus a history file", null) { export() })
-            add(step(9, "Import filing history", "Reports filed outside the app or on another phone — so they're never filed twice",
+            add(step(++n, "File reports", "New texts only — anything already reported is skipped",
+                if (!p.attested) "Attest first" to GREY else st(left == 0 && filedN > 0, "All filed", if (left == 0) "Nothing yet" else "$left to go")) { fileReports(p) })
+            add(step(++n, "Report history", "Every report number, who it went to and when, with the texts — save as PDF",
+                if (filedN > 0) "$filedN" to GREEN else null) { go(HistoryActivity::class.java) })
+            add(step(++n, "Export confirmation report", "CSV + Markdown with every ticket and report number, plus a history file", null) { export() })
+            add(step(++n, "Import filing history", "Reports filed outside the app or on another phone — so they're never filed twice",
                 f.count { it.note == "imported" }.let { if (it > 0) "$it imported" to GREEN else null }) { pickHistory.launch(arrayOf("application/json", "text/plain", "*/*")) })
 
             add(section("Privacy"))
@@ -98,6 +113,11 @@ class MainActivity : AppCompatActivity() {
          .onFailure { toast("Couldn't read that file: ${it.message}") }
     }
 
+    private fun fileReports(p: Profile) {
+        if (!p.complete() || !p.attested) { toast("Fill in your info and tick the attestation first"); go(ProfileActivity::class.java) }
+        else go(FilingActivity::class.java)
+    }
+
     private fun go(c: Class<*>) = startActivity(Intent(this, c))
     private fun toast(s: String) = Toast.makeText(this, s, Toast.LENGTH_LONG).show()
 
@@ -114,12 +134,19 @@ class MainActivity : AppCompatActivity() {
         .setPositiveButton("Delete") { _, _ -> store.wipeAll(); getSharedPreferences("pace", MODE_PRIVATE).edit().clear().apply(); FccAccount.clearLocal(this); toast("All data deleted"); render() }
         .show()
 
+    private var thenSpamFolder = false
+
+    /** One-tap scan: SMS/MMS inbox first, then the Messages Spam & blocked folder. */
+    private fun scanAll() { thenSpamFolder = true; importSms() }
+
     private fun importSms() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.READ_SMS), 1); return }
         Thread {
             val n = store.addMessages(SmsReader.readAll(this, store.spamSenders()))
-            runOnUiThread { toast("Imported $n new messages"); render() }
+            runOnUiThread { toast("Imported $n new messages"); render()
+                if (thenSpamFolder) { thenSpamFolder = false
+                    if (Sources.folderScan(this)) importSpamFolder() else go(MarkSpamActivity::class.java) } }
         }.start()
     }
 
@@ -146,8 +173,20 @@ class MainActivity : AppCompatActivity() {
                 .setPositiveButton("Open settings") { _, _ -> startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }.show()
             return
         }
+        if (!MessagesAccessibilityService.connected) {
+            MaterialAlertDialogBuilder(this).setTitle("Restart Spam Reporter's access")
+                .setMessage("Android shows Spam Reporter's accessibility access as on, but isn't running it (this happens after an app update on some phones).\n\n" +
+                    "In the next screen, open Downloaded apps → Spam Reporter, turn it off, then on again. Then come back and scan.")
+                .setNegativeButton("Not now", null)
+                .setPositiveButton("Open settings") { _, _ -> startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }.show()
+            return
+        }
         MessagesAccessibilityService.armed = true
         toast("In Messages: tap your profile icon → Spam & blocked. The import starts on its own; don't touch the screen until it's done.")
-        packageManager.getLaunchIntentForPackage(MessagesAccessibilityService.PKG)?.let(::startActivity)
+        val launch = packageManager.getLaunchIntentForPackage(MessagesAccessibilityService.PKG)
+        if (launch != null) startActivity(launch)
+        else MaterialAlertDialogBuilder(this).setTitle("Open Google Messages")
+            .setMessage("Couldn't open Google Messages automatically. Open it yourself, tap your profile icon → Spam & blocked, and the import will start on its own.")
+            .setPositiveButton("OK", null).show()
     }
 }

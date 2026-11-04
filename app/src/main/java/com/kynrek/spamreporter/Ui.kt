@@ -31,7 +31,7 @@ object Ui {
 
     /** Toolbar + scrolling column; returns the column to add content to. */
     fun Activity.screen(title: String, subtitle: String? = null, back: Boolean = true, scroll: Boolean = true,
-                        content: LinearLayout.() -> Unit): LinearLayout {
+                        onSettings: (() -> Unit)? = null, content: LinearLayout.() -> Unit): LinearLayout {
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(attr(android.R.attr.colorBackground)) }
         val bar = MaterialToolbar(this).apply {
             this.title = title; this.subtitle = subtitle
@@ -40,6 +40,9 @@ object Ui {
             setSubtitleTextColor(attr(com.google.android.material.R.attr.colorOnPrimary) and 0xCCFFFFFF.toInt())
             if (back) { setNavigationIcon(androidx.appcompat.R.drawable.abc_ic_ab_back_material)
                 navigationIcon?.setTint(attr(com.google.android.material.R.attr.colorOnPrimary)); setNavigationOnClickListener { finish() } }
+            onSettings?.let { open -> menu.add("Settings").apply {
+                setIcon(R.drawable.ic_settings); icon?.setTint(attr(com.google.android.material.R.attr.colorOnPrimary))
+                setShowAsAction(android.view.MenuItem.SHOW_AS_ACTION_ALWAYS); setOnMenuItemClickListener { open(); true } } }
         }
         ViewCompat.setOnApplyWindowInsetsListener(bar) { v, ins -> v.updatePadding(top = ins.getInsets(WindowInsetsCompat.Type.statusBars()).top); ins }
         root.addView(bar)
@@ -75,8 +78,11 @@ object Ui {
         row.addView(LinearLayout(context).apply { orientation = LinearLayout.VERTICAL
             addView(text(title, 16f, true)); addView(text(sub, 13f, alpha = 0.7f)) }, LinearLayout.LayoutParams(0, -2, 1f))
         status?.let { (label, color) -> row.addView(chip(label, color), LinearLayout.LayoutParams(-2, -2).apply { leftMargin = dp(8) }) }
+        row.addView(text("\u203A", 26f, alpha = 0.4f), LinearLayout.LayoutParams(-2, -2).apply { leftMargin = dp(8) }) // chevron: "tap me"
         addView(row, lp())
-    }.apply { isClickable = true; isFocusable = true; setOnClickListener { onClick() } }
+    }.apply { isClickable = true; isFocusable = true; setOnClickListener { onClick() }
+        foreground = android.util.TypedValue().let { tv -> context.theme.resolveAttribute(android.R.attr.selectableItemBackground, tv, true)
+            ContextCompat.getDrawable(context, tv.resourceId) } }
 
     fun Context.chip(label: String, color: Int) = Chip(this).apply {
         text = label; isClickable = false; isCheckable = false; textSize = 12f; chipMinHeight = dp(26).toFloat()

@@ -44,7 +44,7 @@ object Jobs {
         val spam = store.spamSenders().map(Phone::digits).toSet()
         val cats = store.categories()
         return store.messages()
-            .filter { Phone.isTenDigit(it.sender) && (it.spamFlagged || Phone.digits(it.sender) in spam) && it.body.isNotBlank() }
+            .filter { Phone.isTenDigit(it.sender) && Phone.digits(it.sender) in spam && it.body.isNotBlank() }
             .groupBy { Phone.digits(it.sender) }
             .map { (d, ms) -> SenderCase(Phone.dashed(d), ms.sortedBy { it.ts }, cats[d] ?: Classifier.classify(ms.map { it.body })) }
             .sortedByDescending { it.last.ts }
@@ -67,7 +67,25 @@ object Jobs {
     private fun clean(s: String) = java.text.Normalizer.normalize(s, java.text.Normalizer.Form.NFKC)
         .replace(Regex("[\\x{1F000}-\\x{1FFFF}\\x{2600}-\\x{27BF}\\x{FE0F}]"), "").replace("\r", "")
 
-    fun payload(c: SenderCase, p: Profile): JSONObject {
+    private const val FTC_MAX = 2000
+
+    /**
+     * Join message texts within [budget] characters. If they don't all fit, every text is shortened by the same
+     * rule (longest ones first, each keeps at least a fair share) instead of dropping the newest messages.
+     */
+    private fun fit(items: List<Pair<String, String>>, budget: Int, sep: String, fmt: (Pair<String, String>) -> String): String {
+        fun total(xs: List<Pair<String, String>>) = xs.sumOf { fmt(it).length } + sep.length * (xs.size - 1).coerceAtLeast(0)
+        if (total(items) <= budget) return items.joinToString(sep, transform = fmt)
+        var cap = items.maxOf { it.second.length }
+        var lo = 0; var hi = cap
+        while (lo < hi) { val mid = (lo + hi + 1) / 2   // largest per-text length that fits
+            if (total(items.map { (t, b) -> t to if (b.length > mid) b.take(mid).trimEnd() + "…" else b }) <= budget) lo = mid else hi = mid - 1 }
+        cap = lo
+        return items.map { (t, b) -> t to if (b.length > cap) b.take(cap).trimEnd() + "…" else b }.joinToString(sep, transform = fmt).take(budget)
+    }
+
+    /** [compact] = safety-net retry: much shorter text, in case a long one is what stopped the form from submitting. */
+    fun payload(c: SenderCase, p: Profile, compact: Boolean = false): JSONObject {
         val dnc = p.dncRegisteredOn.ifBlank { null }
         val when_ = "${longDate.format(Date(c.last.ts))} at ${hm.format(Date(c.last.ts))}"
         val bodies = c.msgs.map { it.body }
@@ -81,7 +99,8 @@ object Jobs {
         } + (if (n > 1) " $n messages total; most recent is listed as the date of issue." else "") +
             (c.prior.maxByOrNull { it.filedAt }?.let { " This is a new text received after my earlier complaint about this sender" +
                 (it.confirmation?.let { t -> " (ticket/report $t)" } ?: "") + "; the sender continued texting me." } ?: "")
-        val add = clean("Message text as received:\n" + c.msgs.joinToString("\n") { "[${mt.format(Date(it.ts))}] ${it.body}" }).take(1900)
+        val stamped = c.msgs.map { "[${mt.format(Date(it.ts))}]" to clean(it.body).trim() }
+        val add = "Message text as received:\n" + fit(stamped, if (compact) 800 else 1900 - 30, "\n") { (t, b) -> "$t $b" }
         val kind = when (c.category) { Category.COMMERCIAL -> "DNC telemarketing"; Category.POLITICAL -> "Unwanted political"; else -> "Unwanted survey" }
         val (ftcCat, ftcSub) = Classifier.ftcCategory(bodies)
         val prof = JSONObject().put("first", p.first).put("last", p.last).put("address1", p.address1).put("address2", p.address2)
@@ -89,17 +108,23 @@ object Jobs {
         return JSONObject()
             .put("profile", prof).put("sender", c.dashed).put("senderDigits", c.digits)
             .put("subject", "$kind text from ${c.dashed} to ${p.phoneDashed()}".take(70))
-            .put("desc", clean(desc)).put("add", add)
+            // the complaint description has no practical length limit: every text, in full
+            .put("desc", clean(desc) + "\n\nMessage text as received:\n" + fit(stamped, if (compact) 2500 else 12000, "\n") { (t, b) -> "$t $b" })
+            .put("add", add)
             .put("date", longDate.format(Date(c.last.ts))).put("time", hm.format(Date(c.last.ts)).lowercase())
             .put("adv", if (c.category == Category.SURVEY) "No" else "Yes")
             .put("cat", if (c.category == Category.POLITICAL) "Political (including campaign calls/elections)" else Classifier.fccGoodsCategory(bodies))
             .put("named", "No").put("org", "").put("start", "No").put("onDnc", dnc != null)
             .put("ftcCat", ftcCat).put("ftcSub", ftcSub ?: JSONObject.NULL)
             .put("firstDate", shortDate.format(Date(c.first.ts)))
-            .put("ftcDesc", clean("Unsolicited telemarketing text to my wireless number ${p.phoneDashed()}" +
-                (dnc?.let { ", which has been on the National Do Not Call Registry since $it" } ?: "") + ". " +
-                c.msgs.joinToString(" ") { "Received ${mt.format(Date(it.ts))} from ${c.dashed}: \"${it.body}\"." } +
-                " I have no prior business relationship with the sender, made no inquiry, and never gave consent. Also reported to the FCC.").take(2000))
+            .put("ftcDesc", run {
+                val head = clean("Unsolicited telemarketing text to my wireless number ${p.phoneDashed()}" +
+                    (dnc?.let { ", which has been on the National Do Not Call Registry since $it" } ?: "") + ". ")
+                val tail = " I have no prior business relationship with the sender, made no inquiry, and never gave consent. Also reported to the FCC."
+                // the statement and closing are kept whole; the message texts share whatever room is left
+                head + fit(stamped.map { (t, b) -> t.trim('[', ']') to b.replace(Regex("\\s+"), " ") }, (if (compact) 1400 else FTC_MAX) - head.length - tail.length, " ") { (t, b) ->
+                    "Received $t from ${c.dashed}: \"$b\"." } + tail
+            })
     }
 
     /** CSV + Markdown confirmation report into Downloads/SpamReporter. Returns the CSV uri. */

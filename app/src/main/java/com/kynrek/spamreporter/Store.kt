@@ -31,7 +31,9 @@ data class Msg(val sender: String, val ts: Long, val body: String, val source: S
 data class Filing(val sender: String, val agency: Agency, var status: String, var confirmation: String?,
                   var filedAt: Long, var note: String = "", val events: List<String> = emptyList(),
                   /** Every text from this sender received at or before this time is covered by this report. 0 = use [filedAt]. */
-                  val coversUntil: Long = 0) {
+                  val coversUntil: Long = 0,
+                  /** Copy of the texts this report was about (received time, body), for the history page and PDF. */
+                  val texts: List<Pair<Long, String>> = emptyList()) {
     val cutoff get() = if (coversUntil > 0) coversUntil else filedAt
     /** Stable id: a retry of the same events overwrites the failed attempt instead of adding a row. */
     val id get() = "${agency.name}|${Phone.digits(sender)}|${events.minOrNull() ?: ""}"
@@ -39,11 +41,13 @@ data class Filing(val sender: String, val agency: Agency, var status: String, va
     fun toJson() = JSONObject().put("sender", sender).put("agency", agency.name).put("status", status)
         .put("confirmation", confirmation ?: JSONObject.NULL).put("filedAt", filedAt).put("note", note)
         .put("events", JSONArray(events)).put("coversUntil", coversUntil)
+        .put("texts", JSONArray(texts.map { (ts, b) -> JSONObject().put("ts", ts).put("body", b) }))
     companion object {
         fun from(o: JSONObject) = Filing(o.getString("sender"), Agency.valueOf(o.getString("agency")),
             o.getString("status"), if (o.isNull("confirmation")) null else o.getString("confirmation"),
             o.getLong("filedAt"), o.optString("note"),
-            o.optJSONArray("events")?.let { a -> (0 until a.length()).map(a::getString) } ?: emptyList(), o.optLong("coversUntil"))
+            o.optJSONArray("events")?.let { a -> (0 until a.length()).map(a::getString) } ?: emptyList(), o.optLong("coversUntil"),
+            o.optJSONArray("texts")?.let { a -> (0 until a.length()).map { a.getJSONObject(it).let { t -> t.getLong("ts") to t.optString("body") } } } ?: emptyList())
     }
 }
 
@@ -99,6 +103,8 @@ class Store(ctx: Context) {
     }
 
     @Synchronized fun spamSenders(): MutableSet<String> = readArr("spam_senders.json").let { a -> (0 until a.length()).map { a.getString(it) }.toMutableSet() }
+    @Synchronized fun removeSpamSenders(digits: String) { val all = spamSenders().filterNot { Phone.digits(it) == digits }
+        write("spam_senders.json", JSONArray(all).toString()) }
     @Synchronized fun addSpamSenders(s: Collection<String>) { val all = spamSenders(); all.addAll(s); write("spam_senders.json", JSONArray(all.toList()).toString()) }
 
     /** User's category decision per sender (overrides the classifier). */
@@ -117,7 +123,7 @@ class Store(ctx: Context) {
      * in how a text was captured (SMS inbox vs. spam folder vs. notification) can't cause a duplicate filing.
      */
     fun reported(m: Msg, a: Agency, fs: List<Filing> = filings()) = fs.any { f -> f.ok && f.agency == a &&
-        (m.key() in f.events || (Phone.digits(f.sender) == Phone.digits(m.sender) && m.ts <= f.cutoff)) }
+        (m.key() in f.events || (Phone.digits(f.sender) == Phone.digits(m.sender) && m.ts / 60_000 <= f.cutoff / 60_000)) }  // minute precision: agency/ledger times are to the minute
 
     /**
      * Merge reports filed elsewhere (or exported from another install). Returns (added, alreadyKnown).
@@ -130,28 +136,48 @@ class Store(ctx: Context) {
             val o = arr.getJSONObject(i)
             val agency = Agency.valueOf(o.getString("agency")); val sender = Phone.dashed(o.getString("sender"))
             val conf = if (o.isNull("confirmation")) null else o.optString("confirmation").ifBlank { null }
-            if (conf != null && have.any { it.agency == agency && it.confirmation == conf }) { known++; continue }
             val texts = o.optJSONArray("texts")?.let { t -> (0 until t.length()).map { t.getJSONObject(it) } } ?: emptyList()
+            val copy = texts.map { it.getLong("ts") to it.optString("body") }
+            val existing = have.firstOrNull { conf != null && it.agency == agency && it.confirmation == conf }
+            if (existing != null) {
+                if (existing.texts.isEmpty() && copy.isNotEmpty()) upsertFiling(existing.copy(texts = copy))   // backfill the text copy
+                known++; continue }
             val events = texts.map { Msg(sender, it.getLong("ts"), it.optString("body"), Source.SMS, true).key() }
             val f = Filing(sender, agency, if (conf != null) "confirmed" else "submitted", conf, o.getLong("filedAt"),
-                "imported", events, o.optLong("coversUntil"))
-            if (have.any { it.id == f.id && it.ok }) { known++; continue }
+                "imported", events, o.optLong("coversUntil"), copy)
+            if (have.any { it.id == f.id && it.ok && (conf == null || it.confirmation == null) }) { known++; continue }
             upsertFiling(f); added++
         }
         return added to known
     }
 
+    /**
+     * The texts a report covered: its stored copy, else the matching messages on this phone (by event key, else
+     * same sender received after the previous report's cutoff and up to this one's, to the minute).
+     */
+    fun coveredTexts(f: Filing, msgs: List<Msg> = messages(), fs: List<Filing> = filings()): List<Pair<Long, String>> {
+        if (f.texts.isNotEmpty()) return f.texts.sortedBy { it.first }
+        val d = Phone.digits(f.sender)
+        val mine = msgs.filter { Phone.digits(it.sender) == d }
+        mine.filter { it.key() in f.events }.takeIf { it.isNotEmpty() }?.let { return it.sortedBy { m -> m.ts }.map { m -> m.ts to m.body } }
+        val prev = fs.filter { it.ok && it.agency == f.agency && Phone.digits(it.sender) == d && it.cutoff < f.cutoff }.maxOfOrNull { it.cutoff / 60_000 } ?: -1
+        return mine.filter { it.ts / 60_000 <= f.cutoff / 60_000 && it.ts / 60_000 > prev }.sortedBy { it.ts }
+            .distinctBy { it.ts / 60_000 to it.body.trim() }.map { it.ts to it.body }
+    }
+
     fun exportHistory(): String {
-        val byKey = messages().associateBy { it.key() }
-        return JSONObject().put("version", 1).put("filings", JSONArray(filings().filter { it.ok }.map { f ->
+        val ms = messages(); val fs = filings()
+        return JSONObject().put("version", 1).put("filings", JSONArray(fs.filter { it.ok }.map { f ->
             JSONObject().put("agency", f.agency.name).put("sender", f.sender).put("confirmation", f.confirmation ?: JSONObject.NULL)
                 .put("filedAt", f.filedAt).put("coversUntil", f.cutoff)
-                .put("texts", JSONArray(f.events.mapNotNull(byKey::get).map { JSONObject().put("ts", it.ts).put("body", it.body) }))
+                .put("texts", JSONArray(coveredTexts(f, ms, fs).map { (ts, b) -> JSONObject().put("ts", ts).put("body", b) }))
         })).toString(1)
     }
 
     @Synchronized fun upsertFiling(fl: Filing) {
-        val all = filings(); all.removeAll { it.id == fl.id }; all.add(fl)
+        // replaces a failed/unnumbered attempt at the same events, or the same numbered report; two reports with
+        // different agency numbers are both kept (e.g. an accidental duplicate is still a real report on record)
+        val all = filings(); all.removeAll { it.id == fl.id && (!it.ok || it.confirmation == null || fl.confirmation == null || it.confirmation == fl.confirmation) }; all.add(fl)
         write("filings.json", JSONArray(all.map { it.toJson() }).toString())
     }
     /** Called by the notification listener when an FCC ticket email arrives. */
