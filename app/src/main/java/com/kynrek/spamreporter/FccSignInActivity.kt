@@ -34,6 +34,11 @@ class FccSignInActivity : AppCompatActivity() {
     private lateinit var signOut: MaterialButton
     private lateinit var webCard: MaterialCardView
     private var signingOut = false
+    private lateinit var howBody: TextView
+    private lateinit var howHeader: TextView
+    /** "How this works" collapses while the FCC page is shown so the sign-in form is in view; tap the heading to reopen. */
+    private fun setHowOpen(open: Boolean) { howBody.visibility = if (open) View.VISIBLE else View.GONE
+        howHeader.text = "How this works  " + if (open) "\u25BE" else "\u25B8" }
     private lateinit var savedRow: LinearLayout
     // sign-in fields seen on the FCC page (memory only; cleared after the save offer)
     private var typedEmail = ""; private var typedPassword = ""
@@ -90,8 +95,8 @@ class FccSignInActivity : AppCompatActivity() {
                 savedRow = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }; addView(savedRow, lp(top = dp(8)))
             })
             add(card {
-                addView(text("How this works", 15f, true))
-                addView(text("• You sign in on the FCC's own page below (your password manager can fill it in).\n" +
+                val header = text("How this works  \u25BE", 15f, true); addView(header)
+                howBody = text("• You sign in on the FCC's own page below (your password manager can fill it in).\n" +
                     "• Optional: after you sign in, the app can save your email and password on this phone, encrypted with a key " +
                     "that only works right after you unlock with your fingerprint or PIN. Next time it fills them in on the FCC page " +
                     "after you unlock; you still tap Sign in. They're never sent anywhere but the FCC sign-in page.\n" +
@@ -102,7 +107,9 @@ class FccSignInActivity : AppCompatActivity() {
                     "• The sign-in is stored only in this app's private browser storage and is never sent anywhere except the FCC. " +
                     "Tap Sign out to end it now — this also ends the session on the FCC's side. \"Delete all my data\" signs you out too.\n" +
                     "• Recommended: with an account, reports are filed much faster (several at once, no hourly limit). " +
-                    "Not signed in? The app still works; FCC filing is just slower (about 8 per hour).", 13f, alpha = 0.85f), lp(top = dp(6)))
+                    "Not signed in? The app still works; FCC filing is just slower (about 8 per hour).", 13f, alpha = 0.85f); addView(howBody, lp(top = dp(6)))
+                header.setOnClickListener { setHowOpen(howBody.visibility != View.VISIBLE) }
+                howHeader = header
             })
             webCard = MaterialCardView(context).apply { addView(web); visibility = View.GONE }
             addView(webCard, LinearLayout.LayoutParams(-1, dp(560)).apply { topMargin = dp(8) })
@@ -174,7 +181,7 @@ class FccSignInActivity : AppCompatActivity() {
     /** Load "My requests": if the FCC bounces us to sign-in, we're signed out. */
     private fun verify() { showState(null); web.loadUrl(FccAccount.MY_REQUESTS) }
 
-    private fun startSignIn() { filledFromSaved = false; filledWith = null; typedEmail = ""; typedPassword = ""; webCard.visibility = View.VISIBLE; status.text = "Sign in below"; detail.text = "Use your FCC complaint-center email and password."
+    private fun startSignIn() { filledFromSaved = false; filledWith = null; typedEmail = ""; typedPassword = ""; webCard.visibility = View.VISIBLE; setHowOpen(false); status.text = "Sign in below"; detail.text = "Use your FCC complaint-center email and password."
         web.loadUrl(FccAccount.SIGN_IN_URL) }
 
     private fun doSignOut() {
