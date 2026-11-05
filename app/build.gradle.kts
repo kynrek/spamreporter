@@ -1,8 +1,14 @@
+import java.util.Properties
 plugins { id("com.android.application"); id("org.jetbrains.kotlin.android") }
+// Community API app key: lives only in secrets.properties (gitignored), never in the public repo.
+val communityKey = Properties().apply { rootProject.file("secrets.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) } }
+    .getProperty("community.key", "")
 android {
     namespace = "com.kynrek.spamreporter"
     compileSdk = 34
-    defaultConfig { applicationId = "com.kynrek.spamreporter"; minSdk = 28; targetSdk = 34; versionCode = 1; versionName = "1.0" }
+    defaultConfig { applicationId = "com.kynrek.spamreporter"; minSdk = 28; targetSdk = 34; versionCode = 1; versionName = "1.0"
+        buildConfigField("String", "COMMUNITY_KEY", "\"$communityKey\"") }
+    buildFeatures { buildConfig = true }
     buildTypes { release { isMinifyEnabled = false; signingConfig = signingConfigs.getByName("debug") } }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     kotlinOptions { jvmTarget = "17" }

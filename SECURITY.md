@@ -14,6 +14,7 @@
 | `www2.donotcall.gov` | Your phone number + date of the text | donotcall.gov's official hand-off link into ReportFraud |
 | `static.zdassets.com`, `cdn.jsdelivr.net`, `cdnjs.cloudflare.com` | **GET requests only** (scripts/styles the FCC form needs) | No form data |
 | `challenges.cloudflare.com` | Cloudflare bot check in front of the FCC site | No form data |
+| `spamreporter.kynrek.com` | **Only if you turn on Settings → Community (off by default).** Sharing: spam sender number, time, category, and (toggle, default on) the text. Your receiving number, name and contact phone are each a separate toggle, off by default, with a confirmation. Downloading: fetches reported numbers. | Optional community spam list |
 
 Every other request is blocked by `NetPolicy` inside the WebView before it leaves the device:
 
@@ -24,6 +25,18 @@ Every other request is blocked by `NetPolicy` inside the WebView before it leave
 - Google Fonts
 
 Those trackers are embedded in the government pages themselves, and blocking them stops third-party scripts from seeing what is typed into the forms.
+
+## Community spam list (optional, off by default)
+- **Off by default.** Nothing is contacted until you turn on "Share spam with the community" or "Use the community spam list".
+- **Signed requests:** every request carries an HMAC with the app key (kept out of this repo, in `secrets.properties`) and an
+  ECDSA P-256 signature from a per-install key made in the Android Keystore. The server stores only `sha256(public key)`,
+  so it can tell whether two uploads came from the same install, but not who made them. "Reset app ID" makes a new key.
+  The app key ships inside the APK, so it only keeps out casual abuse. The real protection is the server side:
+  per-install and per-IP rate limits, replay protection (timestamp ± 5 min plus single-use nonces), input validation,
+  and admin blocking of installs, IPs and sender numbers.
+- **Server storage:** raw IPs are never stored. A salted hash is kept for abuse tracing, and access logging is off.
+- **Downloaded numbers are only hints:** they show as a "Community" tag and are never marked or reported automatically.
+- **Transport:** HTTPS only, system CAs only (`network_security_config.xml`).
 
 ## At rest
 - **Encryption:** all app data is in app-private storage, encrypted with AES-256-GCM. The key is generated in the Android Keystore,

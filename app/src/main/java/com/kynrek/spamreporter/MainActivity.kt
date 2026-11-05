@@ -31,7 +31,7 @@ import com.kynrek.spamreporter.Ui.text
 class MainActivity : AppCompatActivity() {
     private val store by lazy { Store(this) }
 
-    override fun onResume() { super.onResume(); render() }
+    override fun onResume() { super.onResume(); render(); Community.syncInBackground(this) }
 
     private fun render() {
         val p = store.profile
@@ -102,8 +102,11 @@ class MainActivity : AppCompatActivity() {
                 f.count { it.note == "imported" }.let { if (it > 0) "$it imported" to GREEN else null }) { pickHistory.launch(arrayOf("application/json", "text/plain", "*/*")) })
 
             add(section("Privacy"))
-            add(text("Everything stays on this phone, encrypted with a key in the Android Keystore. The app has no analytics or " +
-                "servers of its own; it only connects to fcc.gov, ftc.gov and donotcall.gov, and blocks trackers on those pages. " +
+            add(text("Everything stays on this phone, encrypted with a key in the Android Keystore. The app has no analytics; " +
+                "it only connects to fcc.gov, ftc.gov and donotcall.gov, and blocks trackers on those pages. " +
+                (if (Community.shareOn(this@MainActivity) || Community.downloadOn(this@MainActivity))
+                    "You turned on the community list, so it also syncs with ${Community.HOST} (Settings → Community). "
+                 else "The optional community spam list (${Community.HOST}) is off unless you turn it on in Settings. ") +
                 "Your FCC password is only saved if you choose to, encrypted and unlocked with your fingerprint or PIN. Contacts (optional) are only compared on this phone.", 13f, alpha = 0.7f))
             add(MaterialButton(context, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
                 text = "Delete all my data"; setTextColor(RED); setOnClickListener { confirmWipe() } }, dp(8))
@@ -140,7 +143,7 @@ class MainActivity : AppCompatActivity() {
     private fun confirmWipe() = MaterialAlertDialogBuilder(this).setTitle("Delete all data?")
         .setMessage("Removes your profile, imported messages and filing history from this phone, signs you out of the FCC and removes a saved FCC sign-in. Reports you already filed stay with the agencies.")
         .setNegativeButton("Cancel", null)
-        .setPositiveButton("Delete") { _, _ -> store.wipeAll(); getSharedPreferences("pace", MODE_PRIVATE).edit().clear().apply(); FccAccount.clearLocal(this); FccLogin.forget(this); toast("All data deleted"); render() }
+        .setPositiveButton("Delete") { _, _ -> store.wipeAll(); getSharedPreferences("pace", MODE_PRIVATE).edit().clear().apply(); FccAccount.clearLocal(this); FccLogin.forget(this); Community.wipe(this); toast("All data deleted"); render() }
         .show()
 
     private var thenSpamFolder = false

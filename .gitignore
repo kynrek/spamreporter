@@ -12,3 +12,4 @@ local.properties
 # never commit exported reports or personal data
 reports/
 *.csv
+secrets.properties

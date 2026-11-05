@@ -104,6 +104,58 @@ class SettingsActivity : AppCompatActivity() {
                 addView(periodPicker(unit) { HistoryPrefs.setCutoff(this@SettingsActivity, it, n); render() }, lp(top = dp(4)))
             }, dp(8))
 
+            add(section("Community (optional)"))
+            if (!Community.available()) add(card { addView(text("Community sharing isn't available in this build.", 13f, alpha = 0.7f)) }, dp(8))
+            else {
+                val me = this@SettingsActivity
+                add(toggle("Share spam with the community", "Off by default. Sends the spam you marked (sender number, date and time" +
+                    (if (Community.shareBody(me)) ", and the text" else "") + ") to the Spam Reporter community list at ${Community.HOST}, " +
+                    "so other users can spot and report the same spammers. Your name and number are NOT sent unless you turn them on below.",
+                    Community.shareOn(me), if (Community.shareOn(me)) "On" to GREEN else null) { on ->
+                    if (!on) { Community.set(me, "community_share", false); render() }
+                    else MaterialAlertDialogBuilder(me).setTitle("Share spam with the community?")
+                        .setMessage("Spam Reporter will send the spam texts you mark — the sender's number, when it arrived" +
+                            (if (Community.shareBody(me)) " and the message text" else "") + " — to ${Community.HOST}.\n\n" +
+                            "Your phone is identified only by a random app ID, not your name or number. Sharing is optional; you can turn it off any time.")
+                        .setNegativeButton("Cancel") { _, _ -> render() }.setOnCancelListener { render() }
+                        .setPositiveButton("Share") { _, _ -> Community.set(me, "community_share", true); render() }.show()
+                })
+                if (Community.shareOn(me)) {
+                    fun sensitive(key: String, title: String, body: String, on: Boolean, what: String) = add(toggle(title, body, on, null) { v ->
+                        if (!v) { Community.set(me, key, false); render() }
+                        else MaterialAlertDialogBuilder(me).setTitle("Share $what?")
+                            .setMessage("You're choosing to share $what with the community to help others fight spam. This is optional — " +
+                                "spam reports are just as useful without it, and you can turn it off any time.")
+                            .setNegativeButton("Don't share") { _, _ -> render() }.setOnCancelListener { render() }
+                            .setPositiveButton("Share") { _, _ -> Community.set(me, key, true); render() }.show()
+                    }, dp(4))
+                    add(toggle("Include message text", "Helps others recognise the same scam. Texts can contain your name or other details — turn off to share numbers and times only.",
+                        Community.shareBody(me), null) { v -> Community.set(me, "community_share_body", v); render() }, dp(4))
+                    sensitive("community_share_to", "Include the number that got the texts", "Your number from \"Your info\". Off by default.",
+                        Community.shareTo(me), "the number that received the spam")
+                    sensitive("community_share_name", "Include your name", "Off by default.", Community.shareName(me), "your name")
+                    sensitive("community_share_phone", "Include your contact phone", "So the community admin could reach you. Off by default.",
+                        Community.sharePhone(me), "your phone number")
+                }
+                add(toggle("Use the community spam list", "Off by default. Downloads numbers other people reported and tags them " +
+                    "\"Community\" on Choose spam senders. A hint only — nothing is marked or reported for you.",
+                    Community.downloadOn(me), null) { v -> Community.set(me, "community_download", v); render() }, dp(4))
+                if (Community.shareOn(me) || Community.downloadOn(me)) add(card {
+                    val last = Community.lastSync(me)
+                    val st = text("Waiting to share: ${Community.pending(me).size} · " + (if (last == 0L) "never synced" else
+                        "last synced ${java.text.SimpleDateFormat("MMM d, h:mm a", java.util.Locale.US).format(java.util.Date(last))}") +
+                        "\nApp ID: ${Community.installId()} (random, not linked to you)", 13f, alpha = 0.75f)
+                    addView(st)
+                    addView(LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL
+                        addView(MaterialButton(context).apply { text = "Sync now"; setOnClickListener { b -> b.isEnabled = false; st.text = "Syncing…"
+                            Thread { val r = runCatching { Community.syncNow(me) }
+                                runOnUiThread { toast(r.getOrElse { "Sync failed: ${it.message}" }); render() } }.start() } })
+                        addView(MaterialButton(context, null, com.google.android.material.R.attr.borderlessButtonStyle).apply { text = "Reset app ID"
+                            setOnClickListener { Community.resetId(); toast("New app ID made"); render() } }, LinearLayout.LayoutParams(-2, -2).apply { leftMargin = dp(8) })
+                    }, lp(top = dp(8)))
+                }, dp(8))
+            }
+
             add(section("Filing"))
             val prefs = getSharedPreferences("settings", MODE_PRIVATE)
             add(toggle("Watch mode", "Scrolls to and highlights each field as the form is filled, so you can follow along. " +
@@ -202,6 +254,8 @@ class SettingsActivity : AppCompatActivity() {
         status?.let { (l, c) -> addView(chip(l, c), LinearLayout.LayoutParams(-2, -2)) }
         addView(text(body, 13f, alpha = 0.7f), lp(top = dp(4)))
     }
+
+    private fun toast(s: String) = android.widget.Toast.makeText(this, s, android.widget.Toast.LENGTH_SHORT).show()
 
     private fun askFor(title: String, msg: String, action: String) = MaterialAlertDialogBuilder(this).setTitle(title).setMessage(msg)
         .setNegativeButton("Later", null).setPositiveButton("Open settings") { _, _ -> startActivity(Intent(action)) }.show()

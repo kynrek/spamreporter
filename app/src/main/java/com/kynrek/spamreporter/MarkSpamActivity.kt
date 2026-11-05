@@ -40,6 +40,7 @@ class MarkSpamActivity : AppCompatActivity() {
     private val shown = HashMap<String, Long>()
 
     private var marks: MutableMap<String, Long> = HashMap()
+    private var community: Map<String, Community.Info> = emptyMap()
     private var remember = true
     private data class Group(val d: String, val ms: List<Msg>, val cat: Category) { val last get() = ms.last().ts }
 
@@ -77,7 +78,7 @@ class MarkSpamActivity : AppCompatActivity() {
         // replied-to numbers count as not spam (setting, default on) unless you explicitly marked them spam
         val repliedOk = if (Replies.enabled(this)) responded - overrides else emptySet()
         val seen = store.seen()
-        marks = store.spamMarks(); remember = store.rememberSpam()
+        marks = store.spamMarks(); remember = store.rememberSpam(); community = Community.numbers(this)
         val fmt = SimpleDateFormat("MMM d, h:mm a", Locale.US)
         val groups = store.messages().filter { Phone.isTenDigit(it.sender) && it.body.isNotBlank() }
             .groupBy { Phone.digits(it.sender) }
@@ -177,6 +178,8 @@ class MarkSpamActivity : AppCompatActivity() {
                 g.ms.any { it.spamFlagged } -> tag.addView(chip("Flagged in Messages", fg ?: Ui.GREY))
                 else -> labels[g.cat]?.let { tag.addView(chip(it, Ui.AMBER)) }
             }
+            // community list (opt-in download): a hint only, never auto-marked
+            community[g.d]?.let { ci -> if (!isContact && g.d !in known) tag.addView(chip("Community: ${ci.installs} reporter${if (ci.installs == 1) "" else "s"}", Ui.RED)) }
             silent = true; box.isChecked = spamNow(); silent = false
         }
         val card = card(12) {
