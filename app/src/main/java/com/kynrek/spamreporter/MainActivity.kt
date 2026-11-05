@@ -76,7 +76,7 @@ class MainActivity : AppCompatActivity() {
             if (scanOn) add(step(look, ++n, "Scan Spam & blocked folder", getSharedPreferences("scan", MODE_PRIVATE).getString("last", null)
                     ?.replaceFirstChar { it.uppercase() } ?: "Reads spam-flagged chats (RCS included) from Google Messages",
                 if (!a11yEnabled()) "Needs access" to AMBER else if (!MessagesAccessibilityService.connected) "Turn access off & on" to RED else "Tap to scan" to NAVY) { importSpamFolder() })
-            add(step(look, ++n, "Choose spam senders", (if (scanOn) "Add spam that Google Messages didn't flag" else "Tick which senders are spam") + " · swipe right = not spam",
+            add(step(look, ++n, "Choose spam senders", (if (scanOn) "Add spam that Google Messages didn't flag" else "Tick which senders are spam") + " · swipe left = spam, right = not spam",
                 if (cases.isEmpty()) "Start here" to NAVY else null) { go(MarkSpamActivity::class.java) })
             if (capOn) add(step(look, ++n, "Capture new spam & FCC tickets", "Saves new texts as they arrive, and FCC ticket numbers from email",
                 st(listenerEnabled(), "On", "Needs access", AMBER)) { startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) })

@@ -125,5 +125,7 @@ object Ui {
     }
 
     val GREEN = 0xFF2E7D32.toInt(); val AMBER = 0xFFB26A00.toInt(); val RED = 0xFFD7263D.toInt(); val NAVY = 0xFF1F2A44.toInt(); val GREY = 0xFF6B6F76.toInt()
-    fun ViewGroup.add(v: View, top: Int = 0) = addView(v, LinearLayout.LayoutParams(-1, -2).apply { topMargin = top })
+    /** Full-width child; keeps the view's own bottom margin (cards are built with one) so stacked cards don't touch. */
+    fun ViewGroup.add(v: View, top: Int = 0) = addView(v, LinearLayout.LayoutParams(-1, -2).apply {
+        topMargin = top; bottomMargin = (v.layoutParams as? ViewGroup.MarginLayoutParams)?.bottomMargin ?: 0 })
 }
