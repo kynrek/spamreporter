@@ -75,7 +75,7 @@ class MainActivity : AppCompatActivity() {
             if (scanOn) add(step(++n, "Scan Spam & blocked folder", getSharedPreferences("scan", MODE_PRIVATE).getString("last", null)
                     ?.replaceFirstChar { it.uppercase() } ?: "Reads spam-flagged chats (RCS included) from Google Messages",
                 if (!a11yEnabled()) "Needs access" to AMBER else if (!MessagesAccessibilityService.connected) "Turn access off & on" to RED else "Tap to scan" to NAVY) { importSpamFolder() })
-            add(step(++n, "Choose spam senders", if (scanOn) "Add spam that Google Messages didn't flag" else "Tick which senders are spam",
+            add(step(++n, "Choose spam senders", (if (scanOn) "Add spam that Google Messages didn't flag" else "Tick which senders are spam") + " · swipe right = not spam",
                 if (cases.isEmpty()) "Start here" to NAVY else null) { go(MarkSpamActivity::class.java) })
             if (capOn) add(step(++n, "Capture new spam & FCC tickets", "Saves new texts as they arrive, and FCC ticket numbers from email",
                 st(listenerEnabled(), "On", "Needs access", AMBER)) { startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) })
@@ -95,7 +95,7 @@ class MainActivity : AppCompatActivity() {
             add(section("Privacy"))
             add(text("Everything stays on this phone, encrypted with a key in the Android Keystore. The app has no analytics or " +
                 "servers of its own; it only connects to fcc.gov, ftc.gov and donotcall.gov, and blocks trackers on those pages. " +
-                "If you sign in to the FCC, the app never sees your password.", 13f, alpha = 0.7f))
+                "If you sign in to the FCC, the app never sees your password. Contacts (optional) are only compared on this phone.", 13f, alpha = 0.7f))
             add(MaterialButton(context, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
                 text = "Delete all my data"; setTextColor(RED); setOnClickListener { confirmWipe() } }, dp(8))
             MessagesAccessibilityService.lastStatus.takeIf { it.isNotBlank() && it != "idle" }?.let { add(text("Spam-folder import: $it", 12f, alpha = 0.5f), dp(12)) }

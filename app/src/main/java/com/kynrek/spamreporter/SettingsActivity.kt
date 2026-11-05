@@ -53,6 +53,22 @@ class SettingsActivity : AppCompatActivity() {
             add(text("Turning a source off disables it completely, so it disappears from Android's Accessibility or Notification access list.",
                 12f, alpha = 0.6f), dp(4))
 
+            add(section("Not spam"))
+            val cOn = Contacts.enabled(this@SettingsActivity)
+            add(toggle("Contacts are never spam",
+                "Anyone in your contacts is treated as not spam: never suggested and never reported. Contacts are only " +
+                "checked on this phone. Needs Contacts access.",
+                cOn, if (!cOn) null else if (Contacts.granted(this@SettingsActivity)) "Access on" to GREEN else "Access needed" to AMBER) { on ->
+                Contacts.setEnabled(this@SettingsActivity, on)
+                if (on && !Contacts.granted(this@SettingsActivity)) requestPermissions(arrayOf(android.Manifest.permission.READ_CONTACTS), 2)
+                render()
+            })
+            add(MaterialButton(this@SettingsActivity, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+                text = "Known numbers (${Store(this@SettingsActivity).knownNumbers().size})"
+                setOnClickListener { startActivity(Intent(context, KnownNumbersActivity::class.java)) } })
+            add(text("Numbers you swiped right on (\"not spam\") under Choose spam senders. Their future texts are never suggested or reported.",
+                12f, alpha = 0.6f), dp(4))
+
             add(section("Filing"))
             val prefs = getSharedPreferences("settings", MODE_PRIVATE)
             add(toggle("Watch mode", "Scrolls to and highlights each field as the form is filled, so you can follow along. " +
@@ -78,6 +94,8 @@ class SettingsActivity : AppCompatActivity() {
                 text = "Your info & attestation"; setOnClickListener { startActivity(Intent(context, ProfileActivity::class.java)) } })
         }
     }
+
+    override fun onRequestPermissionsResult(rc: Int, p: Array<out String>, r: IntArray) { super.onRequestPermissionsResult(rc, p, r); render() }
 
     private fun toggle(title: String, body: String, on: Boolean, status: Pair<String, Int>?, onChange: (Boolean) -> Unit) = card {
         addView(LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER_VERTICAL

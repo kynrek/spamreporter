@@ -41,7 +41,7 @@ object Jobs {
 
     /** Spam-flagged senders (from the Messages spam folder or marked in-app), grouped, with the user's category. */
     fun cases(store: Store): List<SenderCase> {
-        val spam = store.spamSenders().map(Phone::digits).toSet()
+        val spam = store.spamSenders().map(Phone::digits).toSet() - store.notSpam()   // known numbers / contacts are never filed
         val cats = store.categories()
         return store.messages()
             .filter { Phone.isTenDigit(it.sender) && Phone.digits(it.sender) in spam && it.body.isNotBlank() }

@@ -64,6 +64,7 @@ data class Profile(
 
 /** Tiny JSON-file store in app-private storage. */
 class Store(ctx: Context) {
+    private val app = ctx.applicationContext
     private val dir = ctx.filesDir
     private fun f(name: String) = File(dir, name)
     private fun readArr(name: String) = Crypto.read(f(name))?.let(::JSONArray) ?: JSONArray()
@@ -106,6 +107,30 @@ class Store(ctx: Context) {
     @Synchronized fun removeSpamSenders(digits: String) { val all = spamSenders().filterNot { Phone.digits(it) == digits }
         write("spam_senders.json", JSONArray(all).toString()) }
     @Synchronized fun addSpamSenders(s: Collection<String>) { val all = spamSenders(); all.addAll(s); write("spam_senders.json", JSONArray(all.toList()).toString()) }
+
+    /**
+     * "Known numbers": senders the user said aren't spam (swiped right on "Choose spam senders", or added in Settings).
+     * Their texts, now and in future, are never suggested or reported. digits -> when it was added.
+     */
+    @Synchronized fun knownNumbers(): MutableMap<String, Long> {
+        val o = readObj("known.json") ?: JSONObject()
+        return o.keys().asSequence().associateWith { o.getLong(it) }.toMutableMap()
+    }
+    @Synchronized fun addKnown(digits: String) { val m = knownNumbers(); m.putIfAbsent(digits, System.currentTimeMillis())
+        write("known.json", JSONObject(m as Map<*, *>).toString()); removeSpamSenders(digits) }
+    @Synchronized fun removeKnown(digits: String) { val m = knownNumbers(); if (m.remove(digits) != null) write("known.json", JSONObject(m as Map<*, *>).toString()) }
+
+    /** Numbers that are never spam: known numbers, plus contacts when that setting is on (and access granted). */
+    fun notSpam(): Set<String> = knownNumbers().keys + Contacts.numbers(app)
+
+    /** Newest text (ts) of each sender already shown on "Choose spam senders"; later texts make it show again. */
+    @Synchronized fun seen(): MutableMap<String, Long> {
+        val o = readObj("seen.json") ?: JSONObject()
+        return o.keys().asSequence().associateWith { o.getLong(it) }.toMutableMap()
+    }
+    @Synchronized fun markSeen(shown: Map<String, Long>) { if (shown.isEmpty()) return
+        val m = seen(); for ((d, ts) in shown) if (ts > (m[d] ?: 0)) m[d] = ts
+        write("seen.json", JSONObject(m as Map<*, *>).toString()) }
 
     /** User's category decision per sender (overrides the classifier). */
     @Synchronized fun categories(): MutableMap<String, Category> {
