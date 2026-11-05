@@ -167,6 +167,7 @@ class FccSignInActivity : AppCompatActivity() {
         val e = typedEmail; val p = typedPassword; typedPassword = ""
         val same = filledFromSaved && p == filledWith; filledWith = null
         if (!FccLogin.saveEnabled(this) || same || e.isBlank() || p.isEmpty()) return
+        if (FccLogin.lock(this) == FccLogin.Lock.NONE) { FccLogin.explainLock(this); return }   // nothing to lock it with: explain, don't save
         com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
             .setTitle(if (FccLogin.saved(this)) "Update saved FCC sign-in?" else "Save your FCC sign-in?")
             .setMessage("Saves $e and its password on this phone, encrypted and unlocked only with your fingerprint or PIN, " +

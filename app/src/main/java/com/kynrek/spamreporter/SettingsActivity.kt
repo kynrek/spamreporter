@@ -132,6 +132,10 @@ class SettingsActivity : AppCompatActivity() {
                 "With a saved password, the FCC sign-in button becomes \"Sign in again with saved password\": unlock with your " +
                 "fingerprint and it fills and submits the FCC form for you. Off: it only fills the form; you tap Sign in.",
                 FccLogin.autoEnabled(this@SettingsActivity), null) { on -> FccLogin.setAutoEnabled(this@SettingsActivity, on) })
+            add(MaterialButton(this@SettingsActivity, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+                text = when (FccLogin.lock(this@SettingsActivity)) { FccLogin.Lock.FINGERPRINT -> "Fingerprint: on"
+                    FccLogin.Lock.PIN_ONLY -> "Fingerprint: not set (PIN works) — add one"; FccLogin.Lock.NONE -> "Set up fingerprint or PIN (needed to save)" }
+                setOnClickListener { FccLogin.explainLock(this@SettingsActivity) } }, dp(4))
 
             add(section("Account"))
             add(MaterialButton(this@SettingsActivity, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {

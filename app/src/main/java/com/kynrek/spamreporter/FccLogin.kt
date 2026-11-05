@@ -63,6 +63,52 @@ object FccLogin {
         return KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore").apply { init(spec) }.generateKey()
     }
 
+    /** What the phone can unlock the saved sign-in with. */
+    enum class Lock { FINGERPRINT, PIN_ONLY, NONE }
+
+    fun lock(c: Context): Lock {
+        val secure = (c.getSystemService(Context.KEYGUARD_SERVICE) as android.app.KeyguardManager).isDeviceSecure
+        if (!secure) return Lock.NONE
+        val bio = if (Build.VERSION.SDK_INT >= 30)
+            c.getSystemService(BiometricManager::class.java)?.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG) == BiometricManager.BIOMETRIC_SUCCESS
+        else @Suppress("DEPRECATION") c.getSystemService(BiometricManager::class.java)?.canAuthenticate() == BiometricManager.BIOMETRIC_SUCCESS
+        return if (bio) Lock.FINGERPRINT else Lock.PIN_ONLY
+    }
+
+    /** Open the phone's own screen for adding a fingerprint (it asks for a PIN first if there isn't one). The user does the setup. */
+    fun openLockSetup(a: Activity) {
+        val tries = buildList {
+            if (Build.VERSION.SDK_INT >= 30) add(android.content.Intent(android.provider.Settings.ACTION_BIOMETRIC_ENROLL)
+                .putExtra(android.provider.Settings.EXTRA_BIOMETRIC_AUTHENTICATORS_ALLOWED,
+                    BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.DEVICE_CREDENTIAL))
+            @Suppress("DEPRECATION") add(android.content.Intent(android.provider.Settings.ACTION_FINGERPRINT_ENROLL))
+            add(android.content.Intent(android.provider.Settings.ACTION_SECURITY_SETTINGS))
+            add(android.content.Intent(android.provider.Settings.ACTION_SETTINGS))
+        }
+        for (i in tries) if (runCatching { a.startActivity(i) }.isSuccess) return
+    }
+
+    /** Explain the lock and offer the shortcut. [onReady] runs if a lock is already set (fingerprint or PIN). */
+    fun explainLock(a: Activity, onReady: (() -> Unit)? = null) {
+        val l = lock(a)
+        val d = com.google.android.material.dialog.MaterialAlertDialogBuilder(a)
+        when (l) {
+            Lock.NONE -> d.setTitle("Fingerprint or PIN needed")
+                .setMessage("To save and reuse your FCC sign-in, this phone needs a fingerprint or a screen-lock PIN — either one works. " +
+                    "It locks the saved password so only you can use it.\n\nThis is optional: without it, just type your FCC password each time you sign in.")
+                .setPositiveButton("Set up fingerprint / PIN") { _, _ -> openLockSetup(a) }.setNegativeButton("Not now", null)
+            Lock.PIN_ONLY -> d.setTitle("Fingerprint (optional)")
+                .setMessage("Your screen-lock PIN already protects a saved FCC sign-in, so you're set. " +
+                    "Adding a fingerprint lets you unlock it with a touch instead of typing the PIN.\n\nOnly used to lock your saved FCC sign-in.")
+                .setPositiveButton("Add fingerprint") { _, _ -> openLockSetup(a) }
+                .setNegativeButton(if (onReady != null) "Use PIN" else "Close") { _, _ -> onReady?.invoke() }
+            Lock.FINGERPRINT -> d.setTitle("Fingerprint is on")
+                .setMessage("Your saved FCC sign-in is unlocked with your fingerprint, or your PIN as a backup. It's only used for that.")
+                .setPositiveButton("OK") { _, _ -> onReady?.invoke() }
+        }
+        d.show()
+    }
+
     /** Ask for fingerprint / face / PIN, then run [then] (the key is usable for 30 s afterwards). */
     fun unlock(a: Activity, title: String, then: () -> Unit, failed: (String) -> Unit) {
         val b = BiometricPrompt.Builder(a).setTitle(title).setSubtitle("Your FCC sign-in is locked to this phone")

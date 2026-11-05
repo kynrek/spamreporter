@@ -70,6 +70,14 @@ class MainActivity : AppCompatActivity() {
                     else "Recommended: signing in files reports much faster, with no FCC hourly limit. Lasts ~${FccAccount.SESSION_HOURS} hours.",
                 if (FccAccount.likelySignedIn(this@MainActivity)) "Signed in" to GREEN else "Recommended" to AMBER) { go(FccSignInActivity::class.java) })
 
+            val lock = FccLogin.lock(this@MainActivity)
+            add(step(look, ++n, "Fingerprint / PIN (optional)", when (lock) {
+                    FccLogin.Lock.FINGERPRINT -> "Fingerprint is set up · locks your saved FCC sign-in"
+                    FccLogin.Lock.PIN_ONLY -> "PIN is set up · add a fingerprint to unlock your saved FCC sign-in with a touch"
+                    FccLogin.Lock.NONE -> "Only needed to save your FCC sign-in · tap to set up a fingerprint or PIN" },
+                when (lock) { FccLogin.Lock.FINGERPRINT -> "On" to GREEN; FccLogin.Lock.PIN_ONLY -> "PIN only" to GREEN; FccLogin.Lock.NONE -> "Optional" to AMBER }) {
+                FccLogin.explainLock(this@MainActivity) })
+
             add(section("Collect messages"))
             add(step(look, ++n, "Import SMS & MMS", "${msgs.count { it.source == Source.SMS || it.source == Source.MMS }} messages read from your inbox",
                 st(smsOk && msgs.isNotEmpty(), "Imported", "Tap to import")) { importSms() })
