@@ -31,6 +31,14 @@ object FccLogin {
     private fun f(c: Context) = File(c.filesDir, FILE)
 
     fun saved(c: Context) = f(c).exists()
+
+    private fun settings(c: Context) = c.getSharedPreferences("settings", Context.MODE_PRIVATE)
+    /** Settings → "Save FCC password" (default on). Off = never offer to save; turning it off removes a saved one. */
+    fun saveEnabled(c: Context) = settings(c).getBoolean("fcc_save_pw", true)
+    fun setSaveEnabled(c: Context, on: Boolean) { settings(c).edit().putBoolean("fcc_save_pw", on).apply(); if (!on) forget(c) }
+    /** Settings → "Sign in with saved password" (default on): the sign-in button unlocks, fills and submits in one tap. */
+    fun autoEnabled(c: Context) = settings(c).getBoolean("fcc_auto_signin", true)
+    fun setAutoEnabled(c: Context, on: Boolean) = settings(c).edit().putBoolean("fcc_auto_signin", on).apply()
     /** The email (not secret) is kept in plain prefs so the UI can say which account is saved. */
     fun savedEmail(c: Context) = c.getSharedPreferences("fcc_account_login", Context.MODE_PRIVATE).getString("email", null)
 
@@ -86,6 +94,10 @@ object FccLogin {
     /** JS that reads the sign-in form (evaluated by the app; the page gets no way to call into the app). */
     const val READ_JS = "(()=>{const e=document.querySelector('[data-testid=email-input],input[type=email]'),p=document.querySelector('[data-testid=password-input],input[type=password]');" +
         "return JSON.stringify({e:e?e.value:'',p:p?p.value:''})})()"
+
+    /** JS that presses the FCC form's own Sign in button. */
+    const val SUBMIT_JS = "(()=>{const b=document.querySelector('#login-form button[type=submit],form[data-testid=login-form] button[type=submit]');" +
+        "if(!b)return false;b.click();return true})()"
 
     /** JS that fills the sign-in form the way typing would (React-controlled inputs need the native setter + events). */
     fun fillJs(email: String, password: String) =

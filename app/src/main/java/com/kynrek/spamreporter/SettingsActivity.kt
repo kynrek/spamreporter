@@ -122,6 +122,17 @@ class SettingsActivity : AppCompatActivity() {
                 }, lp(top = dp(8)))
             }, dp(8))
 
+            add(section("FCC sign-in"))
+            add(toggle("Save FCC password",
+                "After you sign in, offer to save your FCC email and password on this phone, encrypted and unlocked only with your " +
+                "fingerprint or PIN. Turning this off removes a saved password.",
+                FccLogin.saveEnabled(this@SettingsActivity), if (FccLogin.saved(this@SettingsActivity)) "Saved" to GREEN else null) { on ->
+                FccLogin.setSaveEnabled(this@SettingsActivity, on); render() })
+            add(toggle("Sign in with saved password",
+                "With a saved password, the FCC sign-in button becomes \"Sign in again with saved password\": unlock with your " +
+                "fingerprint and it fills and submits the FCC form for you. Off: it only fills the form; you tap Sign in.",
+                FccLogin.autoEnabled(this@SettingsActivity), null) { on -> FccLogin.setAutoEnabled(this@SettingsActivity, on) })
+
             add(section("Account"))
             add(MaterialButton(this@SettingsActivity, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
                 text = "FCC account"; setOnClickListener { startActivity(Intent(context, FccSignInActivity::class.java)) } })

@@ -65,10 +65,10 @@ class MainActivity : AppCompatActivity() {
             add(step(look, ++n, "Your info & attestation", if (p.complete()) "${p.first} ${p.last} · ${p.phoneDashed()}" else "Name, address, and the number that got the texts",
                 st(p.complete() && p.attested, "Done", if (p.complete()) "Attest" else "Required", RED)) { go(ProfileActivity::class.java) })
 
-            add(step(look, ++n, "FCC account (optional)", if (FccAccount.likelySignedIn(this@MainActivity))
+            add(step(look, ++n, "FCC account (recommended)", if (FccAccount.likelySignedIn(this@MainActivity))
                     "Signed in ${FccAccount.untilText(this@MainActivity)} · tap to sign out"
-                    else "Sign in to file without the FCC's hourly limit. Lasts ~${FccAccount.SESSION_HOURS} hours.",
-                if (FccAccount.likelySignedIn(this@MainActivity)) "Signed in" to GREEN else "Optional" to GREY) { go(FccSignInActivity::class.java) })
+                    else "Recommended: signing in files reports much faster, with no FCC hourly limit. Lasts ~${FccAccount.SESSION_HOURS} hours.",
+                if (FccAccount.likelySignedIn(this@MainActivity)) "Signed in" to GREEN else "Recommended" to AMBER) { go(FccSignInActivity::class.java) })
 
             add(section("Collect messages"))
             add(step(look, ++n, "Import SMS & MMS", "${msgs.count { it.source == Source.SMS || it.source == Source.MMS }} messages read from your inbox",
