@@ -96,7 +96,7 @@ class MainActivity : AppCompatActivity() {
             add(section("Privacy"))
             add(text("Everything stays on this phone, encrypted with a key in the Android Keystore. The app has no analytics or " +
                 "servers of its own; it only connects to fcc.gov, ftc.gov and donotcall.gov, and blocks trackers on those pages. " +
-                "If you sign in to the FCC, the app never sees your password. Contacts (optional) are only compared on this phone.", 13f, alpha = 0.7f))
+                "Your FCC password is only saved if you choose to, encrypted and unlocked with your fingerprint or PIN. Contacts (optional) are only compared on this phone.", 13f, alpha = 0.7f))
             add(MaterialButton(context, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
                 text = "Delete all my data"; setTextColor(RED); setOnClickListener { confirmWipe() } }, dp(8))
             MessagesAccessibilityService.lastStatus.takeIf { it.isNotBlank() && it != "idle" }?.let { add(text("Spam-folder import: $it", 12f, alpha = 0.5f), dp(12)) }
@@ -130,9 +130,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun confirmWipe() = MaterialAlertDialogBuilder(this).setTitle("Delete all data?")
-        .setMessage("Removes your profile, imported messages and filing history from this phone, and signs you out of the FCC. Reports you already filed stay with the agencies.")
+        .setMessage("Removes your profile, imported messages and filing history from this phone, signs you out of the FCC and removes a saved FCC sign-in. Reports you already filed stay with the agencies.")
         .setNegativeButton("Cancel", null)
-        .setPositiveButton("Delete") { _, _ -> store.wipeAll(); getSharedPreferences("pace", MODE_PRIVATE).edit().clear().apply(); FccAccount.clearLocal(this); toast("All data deleted"); render() }
+        .setPositiveButton("Delete") { _, _ -> store.wipeAll(); getSharedPreferences("pace", MODE_PRIVATE).edit().clear().apply(); FccAccount.clearLocal(this); FccLogin.forget(this); toast("All data deleted"); render() }
         .show()
 
     private var thenSpamFolder = false
