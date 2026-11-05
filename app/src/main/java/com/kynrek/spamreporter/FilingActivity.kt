@@ -92,6 +92,7 @@ class FilingActivity : AppCompatActivity() {
             preview = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL
                 val q = Jobs.pending(store)
                 val fmt = SimpleDateFormat("MMM d, h:mm a", Locale.US)
+                val fails = store.filings().filter { !it.ok && it.note.startsWith("error:") }
                 addView(text(if (q.isEmpty()) "Nothing new to file." else "Ready to file ${q.size}", 15f, true), lp(bottom = dp(6)))
                 q.forEachIndexed { i, (c, a) -> addView(card(12) {
                     addView(LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER_VERTICAL
@@ -101,6 +102,9 @@ class FilingActivity : AppCompatActivity() {
                             LinearLayout.LayoutParams(-2, -2).apply { leftMargin = dp(6) })
                     })
                     addView(text("${c.msgs.size} text${if (c.msgs.size == 1) "" else "s"} · last ${fmt.format(Date(c.last.ts))}", 12f, alpha = 0.6f))
+                    // last failed attempt for this exact report (if any), with the reason
+                    fails.firstOrNull { f -> f.agency == a && Phone.digits(f.sender) == Phone.digits(c.dashed) }
+                        ?.let { f -> addView(text("Last try ${fmt.format(Date(f.filedAt))} didn't go through: ${f.note.removePrefix("error:").take(140)}", 12f, color = Ui.RED)) }
                     c.prior.firstOrNull()?.let { f -> addView(text("Reported earlier (#${f.confirmation ?: f.status}); these are newer texts", 12f, color = Ui.RED)) }
                     addView(text(c.last.body.replace(Regex("\\s+"), " ").take(160), 13f, alpha = 0.85f), lp(top = dp(4)))
                 }) }
@@ -156,10 +160,11 @@ class FilingActivity : AppCompatActivity() {
             else "Not signed in to the FCC: limited to $FCC_PER_HOUR per hour; the app waits automatically. Sign in on the home screen to go faster.")
         runOnUiThread { progress.visibility = android.view.View.VISIBLE; progress.isIndeterminate = false; progress.max = maxOf(queue.size, 1) }
         // all lanes run on the main thread, so taking the next item and counting need no locking
-        var next = 0; var done = 0
+        var next = 0; var done = 0; var failedInARow = 0; var whySingle = ""
+        val failures = mutableListOf<String>()
         coroutineScope { for (lane in lanes) launch {
             while (isActive) {
-                if (lane.idx > 0 && singleLane) { lane.label("Lane ${lane.idx + 1}: stopped (filing one at a time)"); break }
+                if (lane.idx > 0 && singleLane) { lane.label("stopped — $whySingle, so lane 1 files the rest one at a time"); break }
                 val i = next++; if (i >= queue.size) break
                 val (c, agency) = queue[i]
                 // re-check right before filing (an earlier run, or a retry, may have just covered these texts)
@@ -184,15 +189,23 @@ class FilingActivity : AppCompatActivity() {
                     r
                 }
                 done++
-                if (!r.startsWith("ok:") && !singleLane && lanes.size > 1) { singleLane = true
-                    log("A report didn't go through — continuing one at a time", r.take(120)) }
+                if (BuildConfig.DEBUG) android.util.Log.i("SpamReporter", "filing $agency ${c.dashed}: ${r.take(200)}")
+                val why = r.removePrefix("error:").take(100)
+                if (r.startsWith("ok:")) failedInARow = 0 else { failedInARow++; failures += "$agency ${c.dashed}: $why" }
+                // Only a real FCC rate limit, or several failures in a row (site trouble), drops to one lane. A single form
+                // error or timeout doesn't slow the other lanes; that report is just retried next run.
+                val rateLimited = r.contains("rate limited")
+                if (!r.startsWith("ok:") && !singleLane && lanes.size > 1 && (rateLimited || failedInARow >= 3)) { singleLane = true
+                    whySingle = if (rateLimited) "the FCC hit its rate limit" else "$failedInARow reports in a row failed"
+                    log("Continuing one at a time: $whySingle", why) }
                 else if (lanes.size > 1) log("$done of ${queue.size} done", if (signedIn) "${lanes.size} at a time · submissions spaced ${MIN_SUBMIT_GAP_MS / 1000}s+ apart" else "")
                 runOnUiThread { progress.setProgressCompat(done, true) }
-                lane.label("${agency}: ${c.dashed} · " + if (r.startsWith("ok:")) "filed ${r.removePrefix("ok:")}" else "failed")
+                lane.label("${agency}: ${c.dashed} · " + if (r.startsWith("ok:")) "filed ${r.removePrefix("ok:")}" else "failed: $why")
             }
         } }
         runOnUiThread { progress.setProgressCompat(progress.max, true) }
-        log("All done", "Export the report from the home screen. FCC ticket numbers fill in as the confirmation emails arrive.")
+        if (failures.isEmpty()) log("All done", "Export the report from the home screen. FCC ticket numbers fill in as the confirmation emails arrive.")
+        else log("Done — ${failures.size} didn't go through (they'll be retried next time)", failures.joinToString("\n"))
     }
 
     // ---------- FCC pacing (shared by all lanes)
