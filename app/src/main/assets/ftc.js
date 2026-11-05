@@ -10,10 +10,12 @@ try {
     const find = txt => { const els = [...document.querySelectorAll('label, [role=radio], .radio, li, div')]
       .filter(e => e.offsetParent !== null && e.innerText && e.innerText.trim().split('\n')[0].trim() === txt); return els[els.length - 1] };
     const ans = async txt => { const el = await until(() => find(txt), 4000); if (!el) throw 'NF ' + txt; await show(el); el.click(); await sl(150) };
-    await ans(P.ftcCat); if (P.ftcSub) await ans(P.ftcSub);
-    const b = await until(() => [...document.querySelectorAll('button')].find(b => b.offsetParent !== null && /^Continue/.test(b.innerText.trim()) && !b.disabled), 4000);
-    if (!b) throw 'no continue';
-    b.click(); return JSON.stringify({ ok: true, step: 'assistant' });
+    const cont = async () => { const b = await until(() => [...document.querySelectorAll('button')].find(b => b.offsetParent !== null && /^Continue/.test(b.innerText.trim()) && !b.disabled), 4000);
+      if (!b) throw 'no continue'; b.click() };
+    await ans(P.ftcCat);
+    // a sub-question (e.g. "What type of health issue was it?") is a second assistant screen, shown after Continue
+    if (P.ftcSub) { await cont(); await until(() => !document.body.innerText.includes('common problems'), 6000); await ans(P.ftcSub) }
+    await cont(); return JSON.stringify({ ok: true, step: 'assistant' });
   }
   await until(() => document.getElementById('yes-or-no-money-no'), 20000);
   const setv = async (sel, v) => { const el = document.querySelector(sel); if (!el) throw 'missing ' + sel; await show(el);
@@ -28,8 +30,12 @@ try {
   const ta = [...document.querySelectorAll('textarea')].find(t => t.offsetParent !== null); await show(ta);
   const fd = ta.maxLength > 0 && P.ftcDesc.length > ta.maxLength ? P.ftcDesc.slice(0, ta.maxLength) : P.ftcDesc;  // respect the field's limit
   Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(ta, fd); ['input', 'change', 'blur'].forEach(e => ta.dispatchEvent(new Event(e, { bubbles: true })));
-  await radio('yes-or-no-report-other-yes'); await until(() => document.querySelector('#rayfirstName'), 3000);
-  await setv('#rayfirstName', U.first); await setv('#raylastName', U.last); await setv('#reportAboutYouAddress', U.address1);
+  // "Are you filing this report for someone else?" -> No (Yes would add a second person's details section)
+  await radio('yes-or-no-report-other-no'); await until(() => document.querySelector('#rayfirstName'), 3000);
+  await setv('#rayfirstName', U.first); await setv('#raylastName', U.last);
+  const ctry = document.querySelector('#raycountry');   // the State list only appears once the country is USA
+  if (ctry) { await setv('#raycountry', [...ctry.options].find(o => o.text.trim() == 'USA').value); if (!await until(() => document.querySelector('#raystate'), 3000)) throw 'no state list' }
+  await setv('#reportAboutYouAddress', U.address1);
   if (U.address2) await setv('#rayaddresstwo', U.address2); await setv('#raycity', U.city);
   const st = document.querySelector('#raystate'); await setv('#raystate', [...st.options].find(o => o.text.trim() == U.stateName).value);
   await setv('#USZipCode', U.zip); await setv('#rayphone', U.phone);

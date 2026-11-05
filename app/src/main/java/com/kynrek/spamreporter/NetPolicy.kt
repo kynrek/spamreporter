@@ -18,6 +18,7 @@ object NetPolicy {
         "fcctest.zendesk.com",             // the same FCC Zendesk account's own host (HelpCenter.account.subdomain = "fcctest",
                                            // environment "production"); sign-in/session hand-off goes through /access here
         "reportfraud.ftc.gov",             // FTC ReportFraud
+        "www2.reportfraud.ftc.gov",        // FTC ReportFraud API (/PROD_EAST/complaintsubmission, verifydnc, address check), since Nov 2026
         "www.donotcall.gov", "www2.donotcall.gov", // FTC DNC hand-off link for text complaints
     )
     /** Static code the forms cannot run without (no form data is sent to these: GET of scripts/styles only). */
