@@ -98,9 +98,12 @@ object Community {
         val s = Store(c); val notSpam = s.notSpam(); val done = sent(c)
         val spam = s.spamSenders().map(Phone::digits).toSet() - notSpam
         val marks = s.spamMarks(); val remember = s.rememberSpam(); val cats = s.categories().mapKeys { Phone.digits(it.key) }
-        return s.messages().filter { m -> val d = Phone.digits(m.sender)
+        val all = s.messages(); val bySender = all.groupBy { Phone.digits(it.sender) }
+        return all.filter { m -> val d = Phone.digits(m.sender)
             d in spam && m.key() !in done && cats[d] != Category.IGNORE && (remember || m.ts <= (marks[d] ?: Long.MAX_VALUE))
-        }.map { it to cats[Phone.digits(it.sender)] }
+        }.groupBy { Phone.digits(it.sender) }.flatMap { (d, ms) ->   // same category the filing uses: yours, else the classifier's
+            val cat = cats[d] ?: Classifier.classify(bySender[d].orEmpty().map { it.body })
+            ms.map { it to cat } }
     }
 
     private fun upload(c: Context): Int {

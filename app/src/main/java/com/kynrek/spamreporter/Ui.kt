@@ -47,7 +47,10 @@ object Ui {
         ViewCompat.setOnApplyWindowInsetsListener(bar) { v, ins -> v.updatePadding(top = ins.getInsets(WindowInsetsCompat.Type.statusBars()).top); ins }
         root.addView(bar)
         val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(16), dp(12), dp(16), dp(32)); content() }
-        if (scroll) root.addView(androidx.core.widget.NestedScrollView(this).apply { addView(col) }, LinearLayout.LayoutParams(-1, 0, 1f))
+        // re-rendering the same screen (after a toggle, or coming back to it) keeps the scroll position instead of jumping to the top
+        val keepY = (window?.decorView?.findViewWithTag<View>("screen_scroll") as? androidx.core.widget.NestedScrollView)?.scrollY ?: 0
+        if (scroll) root.addView(androidx.core.widget.NestedScrollView(this).apply { tag = "screen_scroll"; addView(col)
+            if (keepY > 0) post { scrollTo(0, keepY) } }, LinearLayout.LayoutParams(-1, 0, 1f))
         else root.addView(col, LinearLayout.LayoutParams(-1, 0, 1f))
         setContentView(root)
         return col

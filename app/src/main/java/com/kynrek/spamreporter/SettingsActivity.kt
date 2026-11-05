@@ -35,7 +35,8 @@ class SettingsActivity : AppCompatActivity() {
                 "Reads the texts Google Messages has flagged as spam — including RCS chats, which aren't in the SMS inbox. " +
                 "Needs Accessibility access, used only while a scan you started is running.\n\n" +
                 "Off: no Accessibility access is needed; you pick spam senders yourself under \"Choose spam senders\".",
-                scan, if (!scan) null else if (Sources.a11yGranted(this@SettingsActivity)) "Access on" to GREEN else "Access needed" to AMBER) { on ->
+                scan, if (!scan) null else if (Sources.a11yGranted(this@SettingsActivity)) "Access on" to GREEN else "Access needed" to AMBER,
+                if (scan && !Sources.a11yGranted(this@SettingsActivity)) ({ startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }) else null) { on ->
                 Sources.setFolderScan(this@SettingsActivity, on)
                 if (on) askFor("Turn on Accessibility access", "Open Downloaded apps → Spam Reporter and turn it on.", Settings.ACTION_ACCESSIBILITY_SETTINGS)
                 render()
@@ -45,7 +46,8 @@ class SettingsActivity : AppCompatActivity() {
             add(toggle("Capture new texts & FCC tickets",
                 "Saves new texts as they arrive (RCS included) and picks up FCC ticket numbers from Gmail notifications. Needs Notification access.\n\n" +
                 "Off: no Notification access is needed; run a scan to pick up new texts.",
-                cap, if (!cap) null else if (Sources.listenerGranted(this@SettingsActivity)) "Access on" to GREEN else "Access needed" to AMBER) { on ->
+                cap, if (!cap) null else if (Sources.listenerGranted(this@SettingsActivity)) "Access on" to GREEN else "Access needed" to AMBER,
+                if (cap && !Sources.listenerGranted(this@SettingsActivity)) ({ startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }) else null) { on ->
                 Sources.setCapture(this@SettingsActivity, on)
                 if (on && !Sources.listenerGranted(this@SettingsActivity)) askFor("Turn on Notification access", "Find Spam Reporter and allow it.", Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
                 render()
@@ -65,7 +67,8 @@ class SettingsActivity : AppCompatActivity() {
             add(toggle("Contacts are never spam",
                 "Anyone in your contacts is treated as not spam: never suggested and never reported. Contacts are only " +
                 "checked on this phone. Needs Contacts access.",
-                cOn, if (!cOn) null else if (Contacts.granted(this@SettingsActivity)) "Access on" to GREEN else "Access needed" to AMBER) { on ->
+                cOn, if (!cOn) null else if (Contacts.granted(this@SettingsActivity)) "Access on" to GREEN else "Access needed" to AMBER,
+                if (cOn && !Contacts.granted(this@SettingsActivity)) ({ openAppPermissions() }) else null) { on ->
                 Contacts.setEnabled(this@SettingsActivity, on)
                 if (on && !Contacts.granted(this@SettingsActivity)) requestPermissions(arrayOf(android.Manifest.permission.READ_CONTACTS), 2)
                 render()
@@ -246,16 +249,27 @@ class SettingsActivity : AppCompatActivity() {
             addOnButtonCheckedListener { _, id, on -> if (on) ids[id]?.let(onPick) }
         }
 
-    private fun toggle(title: String, body: String, on: Boolean, status: Pair<String, Int>?, onChange: (Boolean) -> Unit) = card {
+    private fun toggle(title: String, body: String, on: Boolean, status: Pair<String, Int>?, onStatus: (() -> Unit)? = null,
+                       onChange: (Boolean) -> Unit) = card {
         addView(LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER_VERTICAL
             addView(text(title, 16f, true), LinearLayout.LayoutParams(0, -2, 1f))
             addView(MaterialSwitch(context).apply { isChecked = on; setOnCheckedChangeListener { _, v -> onChange(v) } })
         })
-        status?.let { (l, c) -> addView(chip(l, c), LinearLayout.LayoutParams(-2, -2)) }
+        status?.let { (l, c) -> addView(chip(if (onStatus != null) "$l ›" else l, c).apply {
+            // "Access needed" tags open the phone's screen where the access is switched on
+            onStatus?.let { go -> isClickable = true; setOnClickListener { go() } } }, LinearLayout.LayoutParams(-2, -2)) }
         addView(text(body, 13f, alpha = 0.7f), lp(top = dp(4)))
     }
 
     private fun toast(s: String) = android.widget.Toast.makeText(this, s, android.widget.Toast.LENGTH_SHORT).show()
+
+    /** This app's App info page, where Permissions → Contacts → Allow switches it on. (Xiaomi's own permission editor
+     *  doesn't list Contacts, so the standard App info page is used.) */
+    private fun openAppPermissions() {
+        if (runCatching { startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.fromParts("package", packageName, null))) }.isSuccess)
+            toast("Tap Permissions → Contacts → Allow")
+        else toast("Open Settings → Apps → Spam Reporter → Permissions → Contacts")
+    }
 
     private fun askFor(title: String, msg: String, action: String) = MaterialAlertDialogBuilder(this).setTitle(title).setMessage(msg)
         .setNegativeButton("Later", null).setPositiveButton("Open settings") { _, _ -> startActivity(Intent(action)) }.show()
