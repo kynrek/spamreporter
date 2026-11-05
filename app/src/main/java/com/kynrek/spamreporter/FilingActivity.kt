@@ -136,6 +136,13 @@ class FilingActivity : AppCompatActivity() {
     private fun log(s: String, detail: String = "") { runOnUiThread { status.text = s; sub.text = detail } }
 
     private suspend fun runQueue() {
+        // marks a run as in progress; if the app is killed (closed by the system, or updated) the home screen sees this
+        // flag still set and offers to resume. Cleared when the run finishes or the user stops / leaves.
+        Interrupted.begin(this)
+        try { runQueueInner() } finally { Interrupted.end(this) }
+    }
+
+    private suspend fun runQueueInner() {
         val p = store.profile
         val queue = Jobs.pending(store)   // only texts not yet reported to each agency
         if (FccAccount.likelySignedIn(this) && queue.any { it.agency == Agency.FCC }) {
@@ -162,6 +169,7 @@ class FilingActivity : AppCompatActivity() {
                 // a report that has started is finished and recorded even if Stop is tapped — Stop takes effect between reports,
                 // so a submission is never left unrecorded (which could otherwise lead to filing it twice)
                 val r = withContext(NonCancellable) {
+                    Interrupted.inFlight(this@FilingActivity, "${agency}: ${c.dashed}", true)
                     var r = try { if (agency == Agency.FCC) lane.fileFcc(Jobs.payload(c, p)) else lane.fileFtc(Jobs.payload(c, p)) } catch (t: Throwable) { "error:" + t.message }
                     // safety net: if the form refused it (still on the form, nothing submitted), retry once with shortened texts
                     if (agency == Agency.FCC && r.startsWith("error:not submitted") && r.contains("/requests/new")) {
@@ -172,6 +180,7 @@ class FilingActivity : AppCompatActivity() {
                         when { !r.startsWith("ok:") -> "failed"; r.length > 3 -> "confirmed"; else -> "submitted" },
                         r.removePrefix("ok:").takeIf { r.startsWith("ok:") && it.isNotEmpty() }, System.currentTimeMillis(), r,
                         events = c.msgs.map { it.key() }, coversUntil = c.msgs.maxOf { it.ts }, texts = c.msgs.map { it.ts to it.body }))
+                    Interrupted.inFlight(this@FilingActivity, "${agency}: ${c.dashed}", false)
                     r
                 }
                 done++
@@ -322,4 +331,21 @@ class FilingActivity : AppCompatActivity() {
             c.inputStream.bufferedReader().readText().substringBefore('~').replace("&amp;", "&")
         }.getOrNull()?.takeIf { it.startsWith("https://reportfraud.ftc.gov") } ?: "https://reportfraud.ftc.gov/assistant"
     }
+}
+
+/** Remembers a filing run that was cut off (app killed or updated mid-run) so the home screen can offer to resume. */
+object Interrupted {
+    @Volatile private var live = false   // true only while a run is going in this process
+    private fun p(c: android.content.Context) = c.getSharedPreferences("filing_run", android.content.Context.MODE_PRIVATE)
+    fun begin(c: android.content.Context) { live = true; p(c).edit().putLong("started", System.currentTimeMillis()).putStringSet("inflight", emptySet()).apply() }
+    fun end(c: android.content.Context) { live = false; p(c).edit().clear().apply() }
+    fun inFlight(c: android.content.Context, what: String, on: Boolean) {
+        val s = (p(c).getStringSet("inflight", null) ?: emptySet()).toMutableSet(); if (on) s += what else s -= what
+        p(c).edit().putStringSet("inflight", s).commit()   // commit: must be on disk before the submission starts
+    }
+    /** Start time of a run that never finished (and isn't running now), or null. */
+    fun stoppedAt(c: android.content.Context) = p(c).getLong("started", 0).takeIf { it > 0 && !live }
+    /** Reports that were mid-submission when it stopped — they may or may not have reached the agency. */
+    fun unsure(c: android.content.Context): Set<String> = p(c).getStringSet("inflight", null) ?: emptySet()
+    fun dismiss(c: android.content.Context) = p(c).edit().clear().apply()
 }

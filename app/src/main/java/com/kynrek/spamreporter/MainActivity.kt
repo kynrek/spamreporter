@@ -23,6 +23,8 @@ import com.kynrek.spamreporter.Ui.dp
 import com.kynrek.spamreporter.Ui.hero
 import com.kynrek.spamreporter.Ui.screen
 import com.kynrek.spamreporter.Ui.section
+import com.kynrek.spamreporter.Ui.card
+import com.kynrek.spamreporter.Ui.lp
 import com.kynrek.spamreporter.Ui.stat
 import com.kynrek.spamreporter.Ui.statsRow
 import com.kynrek.spamreporter.Ui.step
@@ -60,6 +62,23 @@ class MainActivity : AppCompatActivity() {
                 setOnClickListener { fileReports(p) } }, dp(4))
             add(text(if (scanOn) "Scanning reads your inbox, then opens Google Messages to read the Spam & blocked folder (RCS included)."
                 else "Scanning reads your SMS & MMS inbox; then tick the spam senders under \"Choose spam senders\".", 12f, alpha = 0.6f), dp(4))
+
+            Interrupted.stoppedAt(this@MainActivity)?.let { at ->
+                val unsure = Interrupted.unsure(this@MainActivity)
+                add(card {
+                    addView(text("Filing stopped before it finished", 16f, true, RED))
+                    addView(text("The run started ${java.text.SimpleDateFormat("MMM d, h:mm a", java.util.Locale.US).format(java.util.Date(at))} " +
+                        "was cut off — the app was closed by the phone or updated. Reports already filed are saved and won't be filed again; " +
+                        "$left still to file." + (if (unsure.isEmpty()) "" else "\n\nThis one was being sent when it stopped and may or may not have gone through " +
+                        "(check the FCC confirmation email or My requests): ${unsure.joinToString()}"), 13f, alpha = 0.8f), lp(top = dp(4)))
+                    addView(LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL
+                        if (left > 0) addView(MaterialButton(context).apply { text = "Resume filing"
+                            setOnClickListener { Interrupted.dismiss(this@MainActivity); fileReports(p) } })
+                        addView(MaterialButton(context, null, com.google.android.material.R.attr.borderlessButtonStyle).apply { text = "Dismiss"
+                            setOnClickListener { Interrupted.dismiss(this@MainActivity); render() } }, LinearLayout.LayoutParams(-2, -2).apply { leftMargin = dp(8) })
+                    }, lp(top = dp(8)))
+                }, dp(12))
+            }
 
             add(section("Set up"))
             add(step(look, ++n, "Your info & attestation", if (p.complete()) "${p.first} ${p.last} · ${p.phoneDashed()}" else "Name, address, and the number that got the texts",
