@@ -108,6 +108,9 @@ class MainActivity : AppCompatActivity() {
             if (capOn) add(step(look, ++n, "Capture new spam & FCC tickets", "Saves new texts as they arrive, and FCC ticket numbers from email",
                 st(listenerEnabled(), "On", "Needs access", AMBER)) { startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) })
 
+            add(step(look, ++n, "Block spam numbers", "Turn away calls from spam numbers automatically; block texts in a tap or two. Undo any number.",
+                if (CallBlock.active(this@MainActivity)) "On" to GREEN else "Optional" to AMBER) { go(BlockActivity::class.java) })
+
             add(section("Report"))
             add(step(look, ++n, "Review senders", "${cases.count { it.category == Category.COMMERCIAL }} commercial · " +
                 "${cases.count { it.category == Category.POLITICAL }} political · ${cases.count { it.category == Category.SURVEY }} survey",
@@ -162,7 +165,7 @@ class MainActivity : AppCompatActivity() {
     private fun confirmWipe() = MaterialAlertDialogBuilder(this).setTitle("Delete all data?")
         .setMessage("Removes your profile, imported messages and filing history from this phone, signs you out of the FCC and removes a saved FCC sign-in. Reports you already filed stay with the agencies.")
         .setNegativeButton("Cancel", null)
-        .setPositiveButton("Delete") { _, _ -> store.wipeAll(); getSharedPreferences("pace", MODE_PRIVATE).edit().clear().apply(); FccAccount.clearLocal(this); FccLogin.forget(this); Community.wipe(this); toast("All data deleted"); render() }
+        .setPositiveButton("Delete") { _, _ -> store.wipeAll(); getSharedPreferences("pace", MODE_PRIVATE).edit().clear().apply(); FccAccount.clearLocal(this); FccLogin.forget(this); Community.wipe(this); CallBlock.wipe(this); toast("All data deleted"); render() }
         .show()
 
     private var thenSpamFolder = false

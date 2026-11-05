@@ -27,6 +27,12 @@
         android:theme="@style/Theme.SpamReporter">
 
         <activity android:name=".KnownNumbersActivity" />
+        <activity android:name=".BlockActivity" android:exported="false" />
+        <!-- optional call blocking: only active if the user makes Spam Reporter the call screening app -->
+        <service android:name=".SpamCallScreeningService" android:exported="true"
+            android:permission="android.permission.BIND_SCREENING_SERVICE">
+            <intent-filter><action android:name="android.telecom.CallScreeningService" /></intent-filter>
+        </service>
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

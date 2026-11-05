@@ -38,6 +38,12 @@ Those trackers are embedded in the government pages themselves, and blocking the
 - **Downloaded numbers are only hints:** they show as a "Community" tag and are never marked or reported automatically.
 - **Transport:** HTTPS only, system CAs only (`network_security_config.xml`).
 
+## Call blocking (optional)
+- Only works if you make Spam Reporter the phone's call screening ("Caller ID & spam") app. Android then asks it about each
+  incoming call. It checks the number against your spam list on the phone and answers block or allow. Nothing is sent anywhere.
+- Contacts, known numbers and anything marked not spam are never blocked. Each number can be un-blocked individually.
+- Texts can't be blocked by a third-party app. "Block texts" copies the number and opens the phone's own Blocked numbers screen.
+
 ## At rest
 - **Encryption:** all app data is in app-private storage, encrypted with AES-256-GCM. The key is generated in the Android Keystore,
   can't be exported, is hardware-backed where available, and is destroyed on uninstall or "Delete all my data".
