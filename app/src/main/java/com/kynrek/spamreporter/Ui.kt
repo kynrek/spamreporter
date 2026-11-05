@@ -66,21 +66,29 @@ object Ui {
     }
 
     /** Numbered step row: badge, title, subtitle, trailing status chip. */
-    fun Context.step(n: Int, title: String, sub: String, status: Pair<String, Int>?, onClick: () -> Unit) = card(14) {
+    fun Context.step(n: Int, title: String, sub: String, status: Pair<String, Int>?, onClick: () -> Unit) = step(null, n, title, sub, status, onClick)
+
+    /** Step row in a [CardStyle.Look] (background, text color and size); null = theme default. */
+    fun Context.step(look: CardStyle.Look?, n: Int, title: String, sub: String, status: Pair<String, Int>?, onClick: () -> Unit) = card(14) {
+        val k = look?.scale ?: 1f; val fg = look?.fgOrNull
         orientation = LinearLayout.HORIZONTAL
         val row = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         val badge = TextView(context).apply {
-            text = n.toString(); gravity = Gravity.CENTER; textSize = 15f; typeface = Typeface.DEFAULT_BOLD
-            setTextColor(attr(com.google.android.material.R.attr.colorOnPrimary))
-            background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(attr(com.google.android.material.R.attr.colorPrimary)) }
+            text = n.toString(); gravity = Gravity.CENTER; textSize = 15f * k; typeface = Typeface.DEFAULT_BOLD
+            // on a colored card the badge flips to text color with the card color inside, so it stays visible
+            val dark = look != null && look.bg != 0
+            setTextColor(if (dark) look!!.bg else attr(com.google.android.material.R.attr.colorOnPrimary))
+            background = GradientDrawable().apply { shape = GradientDrawable.OVAL
+                setColor(if (dark) (fg ?: 0xFFFFFFFF.toInt()) else attr(com.google.android.material.R.attr.colorPrimary)) }
         }
-        row.addView(badge, LinearLayout.LayoutParams(dp(34), dp(34)).apply { rightMargin = dp(14) })
+        row.addView(badge, LinearLayout.LayoutParams(dp((34 * k).toInt()), dp((34 * k).toInt())).apply { rightMargin = dp(14) })
         row.addView(LinearLayout(context).apply { orientation = LinearLayout.VERTICAL
-            addView(text(title, 16f, true)); addView(text(sub, 13f, alpha = 0.7f)) }, LinearLayout.LayoutParams(0, -2, 1f))
+            addView(text(title, 16f * k, true, fg)); addView(text(sub, 13f * k, color = fg, alpha = 0.75f)) }, LinearLayout.LayoutParams(0, -2, 1f))
         status?.let { (label, color) -> row.addView(chip(label, color), LinearLayout.LayoutParams(-2, -2).apply { leftMargin = dp(8) }) }
-        row.addView(text("\u203A", 26f, alpha = 0.4f), LinearLayout.LayoutParams(-2, -2).apply { leftMargin = dp(8) }) // chevron: "tap me"
+        row.addView(text("\u203A", 26f * k, color = fg, alpha = 0.5f), LinearLayout.LayoutParams(-2, -2).apply { leftMargin = dp(8) }) // chevron: "tap me"
         addView(row, lp())
-    }.apply { isClickable = true; isFocusable = true; setOnClickListener { onClick() }
+    }.apply { if (look != null && look.bg != 0) setCardBackgroundColor(look.bg)
+ isClickable = true; isFocusable = true; setOnClickListener { onClick() }
         foreground = android.util.TypedValue().let { tv -> context.theme.resolveAttribute(android.R.attr.selectableItemBackground, tv, true)
             ContextCompat.getDrawable(context, tv.resourceId) } }
 
@@ -91,9 +99,13 @@ object Ui {
     }
 
     /** Big-number stat tile. */
-    fun Context.stat(value: String, label: String, accent: Int) = MaterialCardView(this).apply {
+    fun Context.stat(value: String, label: String, accent: Int, look: CardStyle.Look? = null) = MaterialCardView(this).apply {
+        val k = look?.scale ?: 1f; val colored = look != null && look.bg != 0
+        if (colored) setCardBackgroundColor(look!!.bg)
+        // navy numbers would vanish on a navy card: use the text color; lift red/green so they read on dark cards
+        val a = when { !colored -> accent; accent == NAVY -> look!!.fgOrNull ?: 0xFFFFFFFF.toInt(); accent == GREEN -> 0xFF66BB6A.toInt(); accent == RED -> 0xFFFF6B7A.toInt(); else -> accent }
         addView(LinearLayout(context).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(14), dp(12), dp(14), dp(12))
-            addView(text(value, 26f, true, accent)); addView(text(label, 12f, alpha = 0.7f)) })
+            addView(text(value, 26f * k, true, a)); addView(text(label, 12f * k, color = look?.fgOrNull, alpha = 0.75f)) })
     }
 
     fun Context.statsRow(vararg tiles: View) = LinearLayout(this).apply {

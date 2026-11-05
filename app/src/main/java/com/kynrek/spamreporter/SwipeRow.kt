@@ -13,29 +13,42 @@ import com.kynrek.spamreporter.Ui.text
 import kotlin.math.abs
 
 /**
- * Wraps a row so it can be swiped right (e.g. "Not spam"). A green label is revealed underneath while dragging;
- * past about a third of the width it slides off and [onSwiped] runs. Taps and vertical scrolling pass through.
+ * Wraps a row so it can be swiped right (green, e.g. "Not spam") and/or left (red, e.g. "Spam"). The matching label
+ * shows underneath while dragging; past about a third of the width the row slides off and the callback runs.
+ * Pass null for a direction to disable it. Taps and vertical scrolling pass through.
  */
 @SuppressLint("ViewConstructor")
-class SwipeRow(ctx: Context, row: View, label: String, private val onSwiped: (SwipeRow) -> Unit) : FrameLayout(ctx) {
+class SwipeRow(ctx: Context, row: View, rightLabel: String?, leftLabel: String?,
+               private val onRight: ((SwipeRow) -> Unit)?, private val onLeft: ((SwipeRow) -> Unit)?) : FrameLayout(ctx) {
     private val slop = ViewConfiguration.get(ctx).scaledTouchSlop
     private val front = row
+    private val rightBack = rightLabel?.let { label(ctx, "  ✓  $it", Ui.GREEN, Gravity.START or Gravity.CENTER_VERTICAL) }
+    private val leftBack = leftLabel?.let { label(ctx, "$it  ✕  ", Ui.RED, Gravity.END or Gravity.CENTER_VERTICAL) }
     private var x0 = 0f; private var y0 = 0f; private var dragging = false
 
+    private fun label(ctx: Context, s: String, color: Int, g: Int) = ctx.text(s, 15f, true, 0xFFFFFFFF.toInt()).apply {
+        gravity = g; setPadding(ctx.dp(20), 0, ctx.dp(20), 0); visibility = View.INVISIBLE
+        background = GradientDrawable().apply { cornerRadius = ctx.dp(12).toFloat(); setColor(color) }
+    }
+
     init {
-        val back = ctx.text("  ✓  $label", 15f, true, 0xFFFFFFFF.toInt()).apply {
-            gravity = Gravity.CENTER_VERTICAL; setPadding(ctx.dp(20), 0, 0, 0)
-            background = GradientDrawable().apply { cornerRadius = ctx.dp(12).toFloat(); setColor(Ui.GREEN) }
-        }
-        val lp = row.layoutParams as? MarginLayoutParams
-        addView(back, LayoutParams(-1, -1).apply { bottomMargin = lp?.bottomMargin ?: 0 })
+        val bottom = (row.layoutParams as? MarginLayoutParams)?.bottomMargin ?: 0
+        for (b in listOfNotNull(rightBack, leftBack)) addView(b, LayoutParams(-1, -1).apply { bottomMargin = bottom })
         addView(row)
     }
 
     private fun startsDrag(e: MotionEvent): Boolean {
         val dx = e.x - x0; val dy = e.y - y0
-        if (!dragging && dx > slop && abs(dx) > abs(dy) * 1.5f) { dragging = true; parent?.requestDisallowInterceptTouchEvent(true) }
+        val ok = (dx > 0 && onRight != null) || (dx < 0 && onLeft != null)
+        if (!dragging && ok && abs(dx) > slop && abs(dx) > abs(dy) * 1.5f) { dragging = true; parent?.requestDisallowInterceptTouchEvent(true) }
         return dragging
+    }
+
+    private fun show(dx: Float) {
+        val x = when { dx > 0 && onRight != null -> dx; dx < 0 && onLeft != null -> dx; else -> 0f }
+        front.translationX = x
+        rightBack?.visibility = if (x > 0) View.VISIBLE else View.INVISIBLE
+        leftBack?.visibility = if (x < 0) View.VISIBLE else View.INVISIBLE
     }
 
     override fun onInterceptTouchEvent(e: MotionEvent): Boolean {
@@ -50,17 +63,19 @@ class SwipeRow(ctx: Context, row: View, label: String, private val onSwiped: (Sw
     override fun onTouchEvent(e: MotionEvent): Boolean {
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> { x0 = e.x; y0 = e.y; dragging = false }
-            MotionEvent.ACTION_MOVE -> if (startsDrag(e)) front.translationX = (e.x - x0).coerceAtLeast(0f)
+            MotionEvent.ACTION_MOVE -> if (startsDrag(e)) show(e.x - x0)
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                if (dragging && e.actionMasked == MotionEvent.ACTION_UP && e.x - x0 > width * 0.35f)
-                    front.animate().translationX(width.toFloat()).setDuration(150).withEndAction { onSwiped(this) }.start()
-                else front.animate().translationX(0f).setDuration(150).start()
+                val dx = front.translationX
+                val done = dragging && e.actionMasked == MotionEvent.ACTION_UP && abs(dx) > width * 0.35f
+                if (done && dx > 0) front.animate().translationX(width.toFloat()).setDuration(150).withEndAction { onRight?.invoke(this) }.start()
+                else if (done && dx < 0) front.animate().translationX(-width.toFloat()).setDuration(150).withEndAction { onLeft?.invoke(this) }.start()
+                else front.animate().translationX(0f).setDuration(150).withEndAction { show(0f) }.start()
                 dragging = false
             }
         }
         return true
     }
 
-    /** Put the row back (after Undo). */
-    fun reset() { front.translationX = 0f; visibility = View.VISIBLE }
+    /** Put the row back (after Undo, or when the row stays in place). */
+    fun reset() { show(0f); visibility = View.VISIBLE }
 }

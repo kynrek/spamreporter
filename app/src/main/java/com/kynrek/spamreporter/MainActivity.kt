@@ -46,10 +46,11 @@ class MainActivity : AppCompatActivity() {
         val scanOn = Sources.folderScan(this)
         val capOn = Sources.capture(this)
         var n = 0
+        val look = CardStyle.look(this, CardStyle.Screen.HOME)
         screen("Spam Reporter", back = false, onSettings = { go(SettingsActivity::class.java) }) {
             add(hero("Spam Reporter", "Report spam texts to the FCC and FTC — from your phone, in a few taps."))
-            add(statsRow(stat("${cases.size}", "spam senders", NAVY), stat("$filedN", "reports filed", GREEN),
-                stat("$left", "left to file", RED)), dp(8))
+            add(statsRow(stat("${cases.size}", "spam senders", NAVY, look), stat("$filedN", "reports filed", GREEN, look),
+                stat("$left", "left to file", RED, look)), dp(8))
             add(MaterialButton(context).apply {
                 text = "Scan for new spam"; textSize = 16f; minimumHeight = dp(56)
                 setOnClickListener { scanAll() } }, dp(12))
@@ -61,35 +62,35 @@ class MainActivity : AppCompatActivity() {
                 else "Scanning reads your SMS & MMS inbox; then tick the spam senders under \"Choose spam senders\".", 12f, alpha = 0.6f), dp(4))
 
             add(section("Set up"))
-            add(step(++n, "Your info & attestation", if (p.complete()) "${p.first} ${p.last} · ${p.phoneDashed()}" else "Name, address, and the number that got the texts",
+            add(step(look, ++n, "Your info & attestation", if (p.complete()) "${p.first} ${p.last} · ${p.phoneDashed()}" else "Name, address, and the number that got the texts",
                 st(p.complete() && p.attested, "Done", if (p.complete()) "Attest" else "Required", RED)) { go(ProfileActivity::class.java) })
 
-            add(step(++n, "FCC account (optional)", if (FccAccount.likelySignedIn(this@MainActivity))
+            add(step(look, ++n, "FCC account (optional)", if (FccAccount.likelySignedIn(this@MainActivity))
                     "Signed in ${FccAccount.untilText(this@MainActivity)} · tap to sign out"
                     else "Sign in to file without the FCC's hourly limit. Lasts ~${FccAccount.SESSION_HOURS} hours.",
                 if (FccAccount.likelySignedIn(this@MainActivity)) "Signed in" to GREEN else "Optional" to GREY) { go(FccSignInActivity::class.java) })
 
             add(section("Collect messages"))
-            add(step(++n, "Import SMS & MMS", "${msgs.count { it.source == Source.SMS || it.source == Source.MMS }} messages read from your inbox",
+            add(step(look, ++n, "Import SMS & MMS", "${msgs.count { it.source == Source.SMS || it.source == Source.MMS }} messages read from your inbox",
                 st(smsOk && msgs.isNotEmpty(), "Imported", "Tap to import")) { importSms() })
-            if (scanOn) add(step(++n, "Scan Spam & blocked folder", getSharedPreferences("scan", MODE_PRIVATE).getString("last", null)
+            if (scanOn) add(step(look, ++n, "Scan Spam & blocked folder", getSharedPreferences("scan", MODE_PRIVATE).getString("last", null)
                     ?.replaceFirstChar { it.uppercase() } ?: "Reads spam-flagged chats (RCS included) from Google Messages",
                 if (!a11yEnabled()) "Needs access" to AMBER else if (!MessagesAccessibilityService.connected) "Turn access off & on" to RED else "Tap to scan" to NAVY) { importSpamFolder() })
-            add(step(++n, "Choose spam senders", (if (scanOn) "Add spam that Google Messages didn't flag" else "Tick which senders are spam") + " · swipe right = not spam",
+            add(step(look, ++n, "Choose spam senders", (if (scanOn) "Add spam that Google Messages didn't flag" else "Tick which senders are spam") + " · swipe right = not spam",
                 if (cases.isEmpty()) "Start here" to NAVY else null) { go(MarkSpamActivity::class.java) })
-            if (capOn) add(step(++n, "Capture new spam & FCC tickets", "Saves new texts as they arrive, and FCC ticket numbers from email",
+            if (capOn) add(step(look, ++n, "Capture new spam & FCC tickets", "Saves new texts as they arrive, and FCC ticket numbers from email",
                 st(listenerEnabled(), "On", "Needs access", AMBER)) { startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) })
 
             add(section("Report"))
-            add(step(++n, "Review senders", "${cases.count { it.category == Category.COMMERCIAL }} commercial · " +
+            add(step(look, ++n, "Review senders", "${cases.count { it.category == Category.COMMERCIAL }} commercial · " +
                 "${cases.count { it.category == Category.POLITICAL }} political · ${cases.count { it.category == Category.SURVEY }} survey",
                 if (cases.isEmpty()) null else "Check" to NAVY) { go(ReviewActivity::class.java) })
-            add(step(++n, "File reports", "New texts only — anything already reported is skipped",
+            add(step(look, ++n, "File reports", "New texts only — anything already reported is skipped",
                 if (!p.attested) "Attest first" to GREY else st(left == 0 && filedN > 0, "All filed", if (left == 0) "Nothing yet" else "$left to go")) { fileReports(p) })
-            add(step(++n, "Report history", "Every report number, who it went to and when, with the texts — save as PDF",
+            add(step(look, ++n, "Report history", "Every report number, who it went to and when, with the texts — save as PDF",
                 if (filedN > 0) "$filedN" to GREEN else null) { go(HistoryActivity::class.java) })
-            add(step(++n, "Export confirmation report", "CSV + Markdown with every ticket and report number, plus a history file", null) { export() })
-            add(step(++n, "Import filing history", "Reports filed outside the app or on another phone — so they're never filed twice",
+            add(step(look, ++n, "Export confirmation report", "CSV + Markdown with every ticket and report number, plus a history file", null) { export() })
+            add(step(look, ++n, "Import filing history", "Reports filed outside the app or on another phone — so they're never filed twice",
                 f.count { it.note == "imported" }.let { if (it > 0) "$it imported" to GREEN else null }) { pickHistory.launch(arrayOf("application/json", "text/plain", "*/*")) })
 
             add(section("Privacy"))

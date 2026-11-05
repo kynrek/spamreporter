@@ -53,6 +53,13 @@ class SettingsActivity : AppCompatActivity() {
             add(text("Turning a source off disables it completely, so it disappears from Android's Accessibility or Notification access list.",
                 12f, alpha = 0.6f), dp(4))
 
+            add(section("Spam"))
+            val sp = getSharedPreferences("settings", MODE_PRIVATE)
+            add(toggle("Remember spam senders",
+                "When a number you've marked spam texts again, it comes back under To review already ticked, and its new texts " +
+                "are reported. Off: it comes back unticked, and new texts aren't reported until you tick it again.",
+                sp.getBoolean("remember_spam", true), null) { on -> sp.edit().putBoolean("remember_spam", on).apply() })
+
             add(section("Not spam"))
             val cOn = Contacts.enabled(this@SettingsActivity)
             add(toggle("Contacts are never spam",
@@ -63,11 +70,39 @@ class SettingsActivity : AppCompatActivity() {
                 if (on && !Contacts.granted(this@SettingsActivity)) requestPermissions(arrayOf(android.Manifest.permission.READ_CONTACTS), 2)
                 render()
             })
+            add(toggle("Texts you replied to are not spam",
+                "If you've sent a text to a number, its texts are treated as not spam (tagged \"You responded\"). Replies that are " +
+                "only STOP, unsubscribe, cancel and the like don't count. Ticking or swiping left on one still marks it spam.",
+                Replies.enabled(this@SettingsActivity), null) { on -> Replies.setEnabled(this@SettingsActivity, on) })
             add(MaterialButton(this@SettingsActivity, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
                 text = "Known numbers (${Store(this@SettingsActivity).knownNumbers().size})"
                 setOnClickListener { startActivity(Intent(context, KnownNumbersActivity::class.java)) } })
             add(text("Numbers you swiped right on (\"not spam\") under Choose spam senders. Their future texts are never suggested or reported.",
                 12f, alpha = 0.6f), dp(4))
+
+            add(section("Card style"))
+            for (scr in CardStyle.Screen.values()) add(styleEditor(scr), dp(8))
+
+            add(section("History"))
+            add(card {
+                addView(text("Group history by", 16f, true))
+                addView(text("How senders under Choose spam senders → History are grouped, by their latest text.", 13f, alpha = 0.7f), lp(top = dp(4)))
+                addView(periodPicker(HistoryPrefs.grouping(this@SettingsActivity)) { HistoryPrefs.setGrouping(this@SettingsActivity, it) }, lp(top = dp(8)))
+            }, dp(8))
+            add(card {
+                val unit = HistoryPrefs.cutoffUnit(this@SettingsActivity); val n = HistoryPrefs.cutoffCount(this@SettingsActivity)
+                addView(text("Show history from the last", 16f, true))
+                addView(text("Senders with no texts in this time are hidden from History (they're still filed if marked spam). " +
+                    "None shows everything. Now: ${HistoryPrefs.cutoffLabel(this@SettingsActivity)}.", 13f, alpha = 0.7f), lp(top = dp(4)))
+                addView(LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER_VERTICAL
+                    val step = { d: Int -> MaterialButton(context, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+                        text = if (d < 0) "−" else "+"; isEnabled = unit != HistoryPrefs.Period.NONE
+                        setOnClickListener { HistoryPrefs.setCutoff(this@SettingsActivity, unit, n + d); render() } } }
+                    addView(step(-1)); addView(text(if (unit == HistoryPrefs.Period.NONE) "–" else "$n", 20f, true).apply { gravity = android.view.Gravity.CENTER },
+                        LinearLayout.LayoutParams(dp(64), -2)); addView(step(1))
+                }, lp(top = dp(8)))
+                addView(periodPicker(unit) { HistoryPrefs.setCutoff(this@SettingsActivity, it, n); render() }, lp(top = dp(4)))
+            }, dp(8))
 
             add(section("Filing"))
             val prefs = getSharedPreferences("settings", MODE_PRIVATE)
@@ -96,6 +131,53 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     override fun onRequestPermissionsResult(rc: Int, p: Array<out String>, r: IntArray) { super.onRequestPermissionsResult(rc, p, r); render() }
+
+    /** Background, text color and text size for one screen's cards, with a live preview. */
+    private fun styleEditor(scr: CardStyle.Screen) = card {
+        val ctx = this@SettingsActivity; val look = CardStyle.look(ctx, scr)
+        addView(text(scr.label, 16f, true))
+        addView(text("Background", 13f, alpha = 0.7f), lp(top = dp(8)))
+        addView(swatches(CardStyle.backgrounds, look.bg) { CardStyle.setBackground(ctx, scr, it); render() })
+        addView(text("Text color", 13f, alpha = 0.7f), lp(top = dp(8)))
+        addView(swatches(CardStyle.texts, look.fg) { CardStyle.setText(ctx, scr, it); render() })
+        addView(text("Text size", 13f, alpha = 0.7f), lp(top = dp(8)))
+        addView(com.google.android.material.button.MaterialButtonToggleGroup(context).apply {
+            isSingleSelection = true; isSelectionRequired = true
+            val ids = CardStyle.sizes.entries.associateBy { android.view.View.generateViewId() }
+            for ((id, e) in ids) addView(MaterialButton(context, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+                this.id = id; text = e.key; textSize = 11f; setPadding(0, 0, 0, 0) }, LinearLayout.LayoutParams(0, -2, 1f))
+            check(ids.entries.minByOrNull { kotlin.math.abs(it.value.value - look.scale) }!!.key)
+            addOnButtonCheckedListener { _, id, on -> if (on) ids[id]?.let { CardStyle.setScale(ctx, scr, it.value); render() } }
+        })
+        addView(com.google.android.material.card.MaterialCardView(context).apply {
+            if (look.bg != 0) setCardBackgroundColor(look.bg)
+            addView(LinearLayout(context).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(14), dp(10), dp(14), dp(10))
+                addView(text(if (scr == CardStyle.Screen.HOME) "Choose spam senders" else "555-123-4567", 16f * look.scale, true, look.fgOrNull))
+                addView(text("Preview of a card on this screen", 13f * look.scale, color = look.fgOrNull, alpha = 0.8f)) })
+        }, lp(top = dp(12)))
+    }
+
+    /** Row of named color chips; the selected one is checked. */
+    private fun swatches(options: Map<String, Int>, sel: Int, onPick: (Int) -> Unit) = com.google.android.material.chip.ChipGroup(this).apply {
+        isSingleSelection = true; isSelectionRequired = true
+        for ((name, color) in options) addView(com.google.android.material.chip.Chip(context).apply {
+            text = name; isCheckable = true; isChecked = color == sel; id = android.view.View.generateViewId()
+            if (color != 0) { chipIcon = android.graphics.drawable.GradientDrawable().apply { shape = android.graphics.drawable.GradientDrawable.OVAL
+                setColor(color); setStroke(dp(1), 0xFF888888.toInt()); setSize(dp(18), dp(18)) }; isChipIconVisible = true }
+            setOnClickListener { if (color != sel) onPick(color) }
+        })
+    }
+
+    /** None / Day / Week / Month / Year buttons. */
+    private fun periodPicker(sel: HistoryPrefs.Period, onPick: (HistoryPrefs.Period) -> Unit) =
+        com.google.android.material.button.MaterialButtonToggleGroup(this).apply {
+            isSingleSelection = true; isSelectionRequired = true
+            val ids = HistoryPrefs.Period.values().associateBy { android.view.View.generateViewId() }
+            for ((id, p) in ids) addView(MaterialButton(context, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+                this.id = id; text = p.label; textSize = 12f; setPadding(0, 0, 0, 0) }, LinearLayout.LayoutParams(0, -2, 1f))
+            check(ids.entries.first { it.value == sel }.key)
+            addOnButtonCheckedListener { _, id, on -> if (on) ids[id]?.let(onPick) }
+        }
 
     private fun toggle(title: String, body: String, on: Boolean, status: Pair<String, Int>?, onChange: (Boolean) -> Unit) = card {
         addView(LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER_VERTICAL

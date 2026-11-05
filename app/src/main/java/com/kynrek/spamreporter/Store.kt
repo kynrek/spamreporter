@@ -120,8 +120,32 @@ class Store(ctx: Context) {
         write("known.json", JSONObject(m as Map<*, *>).toString()); removeSpamSenders(digits) }
     @Synchronized fun removeKnown(digits: String) { val m = knownNumbers(); if (m.remove(digits) != null) write("known.json", JSONObject(m as Map<*, *>).toString()) }
 
-    /** Numbers that are never spam: known numbers, plus contacts when that setting is on (and access granted). */
-    fun notSpam(): Set<String> = knownNumbers().keys + Contacts.numbers(app)
+    /**
+     * Numbers that are never spam: known numbers; contacts (setting on + access granted); and numbers you replied to
+     * (setting on) unless you explicitly marked them spam afterwards ([spamOverrides]).
+     */
+    fun notSpam(): Set<String> = knownNumbers().keys + Contacts.numbers(app) + (Replies.numbers(app) - spamOverrides())
+
+    /**
+     * When each spam sender was marked: digits -> newest text covered by the mark. With "Remember spam senders" off,
+     * texts after this aren't treated as spam until the sender is ticked again. Created from the current spam list
+     * the first time (so existing marks cover everything received so far).
+     */
+    @Synchronized fun spamMarks(): MutableMap<String, Long> {
+        readObj("spam_marks.json")?.let { o -> return o.keys().asSequence().associateWith { o.getLong(it) }.toMutableMap() }
+        val newest = messages().groupBy { Phone.digits(it.sender) }.mapValues { (_, ms) -> ms.maxOf { it.ts } }
+        val m = spamSenders().map(Phone::digits).associateWith { newest[it] ?: 0L }.toMutableMap()
+        write("spam_marks.json", JSONObject(m as Map<*, *>).toString()); return m
+    }
+    @Synchronized fun setSpamMark(digits: String, upTo: Long?) { val m = spamMarks(); if (upTo == null) m.remove(digits) else m[digits] = upTo
+        write("spam_marks.json", JSONObject(m as Map<*, *>).toString()) }
+    /** "Remember spam senders" (default on): new texts from a number you marked spam are spam too. */
+    fun rememberSpam() = app.getSharedPreferences("settings", Context.MODE_PRIVATE).getBoolean("remember_spam", true)
+
+    /** Numbers you explicitly marked spam (tick / swipe left) — this beats "you replied, so not spam". */
+    @Synchronized fun spamOverrides(): MutableSet<String> = readArr("spam_overrides.json").let { a -> (0 until a.length()).map { a.getString(it) }.toMutableSet() }
+    @Synchronized fun setSpamOverride(digits: String, on: Boolean) { val s = spamOverrides(); if (if (on) s.add(digits) else s.remove(digits))
+        write("spam_overrides.json", JSONArray(s.toList()).toString()) }
 
     /** Newest text (ts) of each sender already shown on "Choose spam senders"; later texts make it show again. */
     @Synchronized fun seen(): MutableMap<String, Long> {
