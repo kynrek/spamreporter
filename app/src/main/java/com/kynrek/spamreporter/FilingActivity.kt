@@ -84,7 +84,8 @@ class FilingActivity : AppCompatActivity() {
                 addView(progress, lp(top = dp(10)))
                 addView(MaterialButton(context).apply {
                     text = "Start filing"; setOnClickListener {
-                        if (job?.isActive == true) { job?.cancel(); text = "Start filing"; log("Stopping after the current reports…", "Finished reports are saved and skipped next time.") }
+                        if (text == "Done") finish()   // after a run: close, don't start another pass
+                        else if (job?.isActive == true) { job?.cancel(); text = "Start filing"; log("Stopping after the current reports…", "Finished reports are saved and skipped next time.") }
                         else { text = "Stop"; preview.visibility = android.view.View.GONE; job = lifecycleScopeLaunch { runQueue(); text = "Done" } } } }, lp(top = dp(8)))
             })
             // what will be filed, before anything is sent: one card per report
