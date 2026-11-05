@@ -35,6 +35,9 @@ Those trackers are embedded in the government pages themselves, and blocking the
   per-install and per-IP rate limits, replay protection (timestamp ± 5 min plus single-use nonces), input validation,
   and admin blocking of installs, IPs and sender numbers.
 - **Server storage:** raw IPs are never stored. A salted hash is kept for abuse tracing, and access logging is off.
+- **Removal:** Settings → Community → "Remove my data from the community server" sends a signed `DELETE /v1/me`. The server
+  deletes every report and submission from that install (including any shared name or phone) and the install record.
+  The app then turns sharing off and makes a new install key. "Delete all my data" does the same first.
 - **Downloaded numbers are only hints:** they show as a "Community" tag and are never marked or reported automatically.
 - **Transport:** HTTPS only, system CAs only (`network_security_config.xml`).
 

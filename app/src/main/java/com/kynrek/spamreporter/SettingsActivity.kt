@@ -143,6 +143,16 @@ class SettingsActivity : AppCompatActivity() {
                 add(toggle("Use the community spam list", "Off by default. Downloads numbers other people reported and tags them " +
                     "\"Community\" on Choose spam senders. A hint only — nothing is marked or reported for you.",
                     Community.downloadOn(me), null) { v -> Community.set(me, "community_download", v); render() }, dp(4))
+                if (Community.mayHaveShared(me)) add(MaterialButton(me, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+                    text = "Remove my data from the community server"; setTextColor(Ui.RED)
+                    setOnClickListener { MaterialAlertDialogBuilder(me).setTitle("Remove your shared spam reports?")
+                        .setMessage("Deletes every spam report this phone shared from ${Community.HOST}, including your name or phone if you shared them. " +
+                            "Sharing is turned off and this phone gets a new random app ID. Reports on the FCC and FTC aren't affected.")
+                        .setNegativeButton("Cancel", null)
+                        .setPositiveButton("Remove") { _, _ -> isEnabled = false; text = "Removing…"
+                            Thread { val r = runCatching { Community.deleteMine(me) }
+                                runOnUiThread { toast(r.getOrElse { "Couldn't remove: ${it.message}" }); render() } }.start() }.show() }
+                }, dp(4))
                 if (Community.shareOn(me) || Community.downloadOn(me)) add(card {
                     val last = Community.lastSync(me)
                     val st = text("Waiting to share: ${Community.pending(me).size} · " + (if (last == 0L) "never synced" else

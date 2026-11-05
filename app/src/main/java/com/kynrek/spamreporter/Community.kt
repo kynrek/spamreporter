@@ -152,6 +152,19 @@ object Community {
         return a.length()
     }
 
+    /** True if this phone may have shared something (so offering removal makes sense). */
+    fun mayHaveShared(c: Context) = shareOn(c) || sent(c).isNotEmpty()
+
+    /** Ask the server to delete everything this install shared (reports, submissions incl. any name/phone, the install
+     *  record). On success: sharing is turned off, the "already shared" list is cleared and the phone gets a new app ID,
+     *  so nothing later can be linked to what was removed. Returns a summary; throws with the server's message on failure. */
+    fun deleteMine(c: Context): String {
+        val r = call("DELETE", "/v1/me")
+        set(c, "community_share", false); sentFile(c).delete(); resetId()
+        val n = r.optInt("deleted_reports")
+        return "Removed $n report${if (n == 1) "" else "s"} from the community server. Sharing is off."
+    }
+
     /** "Delete all my data": local community files and the install key. */
     fun wipe(c: Context) { sentFile(c).delete(); list(c).delete(); resetId()
         p(c).edit().remove("community_since").remove("community_last").apply() }

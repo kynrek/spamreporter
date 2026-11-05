@@ -163,10 +163,16 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun confirmWipe() = MaterialAlertDialogBuilder(this).setTitle("Delete all data?")
-        .setMessage("Removes your profile, imported messages and filing history from this phone, signs you out of the FCC and removes a saved FCC sign-in. Reports you already filed stay with the agencies.")
+        .setMessage("Removes your profile, imported messages and filing history from this phone, signs you out of the FCC and removes a saved FCC sign-in. Spam reports you shared with the community server are deleted there too. Reports you already filed stay with the agencies.")
         .setNegativeButton("Cancel", null)
-        .setPositiveButton("Delete") { _, _ -> store.wipeAll(); getSharedPreferences("pace", MODE_PRIVATE).edit().clear().apply(); FccAccount.clearLocal(this); FccLogin.forget(this); Community.wipe(this); CallBlock.wipe(this); TextBlock.wipe(this); toast("All data deleted"); render() }
+        .setPositiveButton("Delete") { _, _ ->
+            // anything shared with the community server is removed there first (needs this phone's key, which the wipe destroys)
+            if (Community.available() && Community.mayHaveShared(this)) Thread { val r = runCatching { Community.deleteMine(this) }
+                runOnUiThread { if (r.isFailure) toast("Couldn't reach the community server to remove your shared reports: ${r.exceptionOrNull()?.message}"); wipeLocal() } }.start()
+            else wipeLocal() }
         .show()
+
+    private fun wipeLocal() { run { store.wipeAll(); getSharedPreferences("pace", MODE_PRIVATE).edit().clear().apply(); FccAccount.clearLocal(this); FccLogin.forget(this); Community.wipe(this); CallBlock.wipe(this); TextBlock.wipe(this); toast("All data deleted"); render() } }
 
     private var thenSpamFolder = false
 
