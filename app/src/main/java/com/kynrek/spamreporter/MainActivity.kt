@@ -178,9 +178,15 @@ class MainActivity : AppCompatActivity() {
             ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.READ_SMS), 1); return }
         Thread {
             val n = store.addMessages(SmsReader.readAll(this, store.spamSenders()))
-            runOnUiThread { toast("Imported $n new messages"); render()
+            val toReview = MarkSpamActivity.reviewCount(this)
+            runOnUiThread { render()
                 if (thenSpamFolder) { thenSpamFolder = false
-                    if (Sources.folderScan(this)) importSpamFolder() else go(MarkSpamActivity::class.java) } }
+                    when {
+                        Sources.folderScan(this) -> { toast("Imported $n new messages"); importSpamFolder() }
+                        // nothing new to look at: stay here instead of opening an empty review screen
+                        toReview == 0 -> toast(if (n == 0) "No new messages" else "Imported $n new messages — nothing new to review")
+                        else -> { toast("$toReview sender${if (toReview == 1) "" else "s"} to review"); go(MarkSpamActivity::class.java) }
+                    } } else toast("Imported $n new messages") }
         }.start()
     }
 

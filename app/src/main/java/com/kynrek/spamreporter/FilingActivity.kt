@@ -290,7 +290,8 @@ class FilingActivity : AppCompatActivity() {
                 ""
             }.let { if (it == "limit") return fileFcc(payload) }   // another lane used the last anonymous slot: wait and refill
             // the ticket number is in the URL we land on, known at first paint
-            var url = withTimeout(30_000) { commits.receive() }
+            // with several lanes the FCC can be slow to answer: wait up to a minute, then look at the page instead of giving up blind
+            var url = withTimeoutOrNull(60_000) { commits.receive() } ?: evalSync("location.href").trim('"')
             if (Regex("/requests/\\d+").find(url) == null && !url.contains("return_to")) url = withTimeoutOrNull(8_000) { pages.receive() } ?: url
             // signed in: lands on /hc/en-us/requests/<ticket>; anonymous: home page with return_to, ticket arrives by email
             val ticket = Regex("/hc/[a-z-]+/requests/(\\d+)").find(url)?.groupValues?.get(1)
@@ -300,7 +301,13 @@ class FilingActivity : AppCompatActivity() {
                 if (FccAccount.isSignInPage(url)) FccAccount.markSignedOut(this@FilingActivity)
                 val limited = evalSync("document.body.innerText.includes('allowed per hour')") == "true"
                 if (limited) { saveFccTimes(List(FCC_PER_HOUR) { System.currentTimeMillis() }); "error:rate limited (will retry next run)" }
-                else "error:not submitted ($url)"
+                else {
+                    // say what the page shows: a Cloudflare check, the form's own error messages, or just where it is
+                    val why = evalSync("(()=>{const t=document.body.innerText;if(/verify you are human|Checking your browser|cf-turnstile/i.test(t+document.body.innerHTML))return 'Cloudflare check';" +
+                        "const e=[...document.querySelectorAll('[role=alert],.notification-error,[data-garden-id=\"forms.input_message\"]')].map(x=>x.innerText.trim()).filter(Boolean);" +
+                        "return e.slice(0,3).join('; ')})()").trim('"')
+                    "error:not submitted" + (if (why.isNotBlank() && why != "null") " — $why" else "") + " ($url)"
+                }
             }
         }
 

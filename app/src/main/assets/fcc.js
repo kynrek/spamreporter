@@ -35,7 +35,8 @@ try {
     // choosing "Other" reveals a required free-text "Type of Property, Goods, or Services" field
     const el = await until(() => [...document.querySelectorAll('form input:not([type=hidden]),form textarea')].find(i => i.offsetParent &&
       i.getAttribute('role') != 'combobox' &&
-      (((i.closest('[data-garden-id="forms.field"],.form-field') || i.parentElement).querySelector('label') || {}).innerText || '').startsWith('Type of Property')), 3000);
+      (((i.closest('[data-garden-id="forms.field"],.form-field') || i.parentElement).querySelector('label') || {}).innerText || '').startsWith('Type of Property'))
+      || document.getElementsByName('request[custom_fields][22659794]')[0], 10000);   // slow to appear when several lanes run at once
     if (!el) throw 'noinput other'; await show(el);
     const pr = el.tagName == 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
     Object.getOwnPropertyDescriptor(pr, 'value').set.call(el, P.catOther || 'Unsolicited marketing');

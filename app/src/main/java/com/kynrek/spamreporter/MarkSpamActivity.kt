@@ -42,6 +42,26 @@ class MarkSpamActivity : AppCompatActivity() {
     private var marks: MutableMap<String, Long> = HashMap()
     private var community: Map<String, Community.Info> = emptyMap()
     private var remember = true
+    companion object {
+        private fun notSpamDigits(d: String, known: Set<String>, contacts: Set<String>, repliedOk: Set<String>) = d in known || d in contacts || d in repliedOk
+        /** Senders with a text newer than what was shown here before (and not "not spam"). A sender already marked spam
+         *  only comes back when it texts again after being marked. */
+        private fun needsReview(last: Map<String, Long>, seen: Map<String, Long>, marked: Set<String>, marks: Map<String, Long>,
+                                notSpam: (String) -> Boolean) = last.filter { (d, ts) -> !notSpam(d) &&
+            ts > maxOf(seen[d] ?: -1, if (d in marked) marks[d] ?: -1 else -1) }.keys
+
+        /** How many senders "To review" would list right now (used by Scan to decide whether to open this screen). */
+        fun reviewCount(c: android.content.Context): Int {
+            val store = Store(c)
+            val known = store.knownNumbers().keys; val contacts = Contacts.numbers(c)
+            val repliedOk = if (Replies.enabled(c)) Replies.responded(c) - store.spamOverrides() else emptySet()
+            val last = store.messages().filter { Phone.isTenDigit(it.sender) && it.body.isNotBlank() }
+                .groupBy { Phone.digits(it.sender) }.mapValues { (_, ms) -> ms.maxOf { it.ts } }
+            return needsReview(last, store.seen(), store.spamSenders().map(Phone::digits).toSet(), store.spamMarks()) {
+                notSpamDigits(it, known, contacts, repliedOk) }.size
+        }
+    }
+
     private data class Group(val d: String, val ms: List<Msg>, val cat: Category) { val last get() = ms.last().ts }
 
     override fun onCreate(b: Bundle?) {
@@ -87,8 +107,8 @@ class MarkSpamActivity : AppCompatActivity() {
         val notSpam = { g: Group -> g.d in known || g.d in contacts || g.d in repliedOk }
         // to review: anyone not "not spam" with a text newer than what was shown here before. A sender already marked
         // spam only comes back when it texts again after being marked (pre-ticked if "Remember spam senders" is on).
-        val review = groups.filter { !notSpam(it) && (it.d in shown ||
-            it.last > maxOf(seen[it.d] ?: -1, if (it.d in marked) marks[it.d] ?: -1 else -1)) }
+        val due = needsReview(groups.associate { it.d to it.last }, seen, marked, marks) { notSpamDigits(it, known, contacts, repliedOk) }
+        val review = groups.filter { it.d in shown || it.d in due }
         val past = groups - review.toSet()
         // History only goes back to the cutoff in Settings (default 3 months), by each sender's newest text
         val cut = HistoryPrefs.cutoffMillis(this)
