@@ -68,10 +68,12 @@ object FccLogin {
         val b = BiometricPrompt.Builder(a).setTitle(title).setSubtitle("Your FCC sign-in is locked to this phone")
         if (Build.VERSION.SDK_INT >= 30) b.setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.DEVICE_CREDENTIAL)
         else @Suppress("DEPRECATION") b.setDeviceCredentialAllowed(true)
-        b.build().authenticate(CancellationSignal(), a.mainExecutor, object : BiometricPrompt.AuthenticationCallback() {
-            override fun onAuthenticationSucceeded(r: BiometricPrompt.AuthenticationResult) = then()
-            override fun onAuthenticationError(code: Int, msg: CharSequence) = failed(msg.toString())
-        })
+        try {
+            b.build().authenticate(CancellationSignal(), a.mainExecutor, object : BiometricPrompt.AuthenticationCallback() {
+                override fun onAuthenticationSucceeded(r: BiometricPrompt.AuthenticationResult) = then()
+                override fun onAuthenticationError(code: Int, msg: CharSequence) = failed(msg.toString())
+            })
+        } catch (t: Throwable) { failed(t.message ?: "Couldn't unlock") }   // never crash the screen over the unlock prompt
     }
 
     /** Must be called within 30 s of [unlock]. */

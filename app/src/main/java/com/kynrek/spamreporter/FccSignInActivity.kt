@@ -193,6 +193,7 @@ class FccSignInActivity : AppCompatActivity() {
         when {
             signingOut -> { signingOut = false; FccAccount.clearLocal(this); webCard.visibility = View.GONE; showState(false) }
             FccAccount.isSignedInPage(url) -> { val fresh = webCard.visibility == View.VISIBLE
+                CookieManager.getInstance().flush()   // write the new FCC session to disk now, not "eventually"
                 FccAccount.markSignedIn(this); webCard.visibility = View.GONE; showState(true); if (fresh) offerSave() }
             onFccSignInPage() && webCard.visibility == View.VISIBLE -> pendingCreds?.let { pendingCreds = null; fill(it, submit = true) } ?: offerFill()
             FccAccount.isSignInPage(url) && webCard.visibility == View.GONE -> { FccAccount.markSignedOut(this); showState(false) }
