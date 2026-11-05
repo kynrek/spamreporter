@@ -26,8 +26,13 @@ object Sources {
     fun capture(ctx: Context) = state(ctx, CaptureNotificationListener::class.java) != PackageManager.COMPONENT_ENABLED_STATE_DISABLED
     fun setCapture(ctx: Context, on: Boolean) = set(ctx, CaptureNotificationListener::class.java, on)
 
-    fun a11yGranted(ctx: Context): Boolean {
-        val want = cn(ctx, MessagesAccessibilityService::class.java).flattenToString()
+    /** Bulk text blocking (Accessibility, phone's Blocked numbers screen only). Off by default. */
+    fun bulkBlock(ctx: Context) = state(ctx, BlockListAccessibilityService::class.java) == PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+    fun setBulkBlock(ctx: Context, on: Boolean) = set(ctx, BlockListAccessibilityService::class.java, on)
+    fun bulkBlockGranted(ctx: Context) = a11yGranted(ctx, BlockListAccessibilityService::class.java)
+
+    fun a11yGranted(ctx: Context, svc: Class<*> = MessagesAccessibilityService::class.java): Boolean {
+        val want = cn(ctx, svc).flattenToString()
         return (Settings.Secure.getString(ctx.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: "").split(':').any { it.equals(want, true) }
     }
     fun listenerGranted(ctx: Context): Boolean {

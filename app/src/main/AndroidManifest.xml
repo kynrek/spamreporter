@@ -28,6 +28,13 @@
 
         <activity android:name=".KnownNumbersActivity" />
         <activity android:name=".BlockActivity" android:exported="false" />
+        <!-- optional: fills in the phone's Blocked numbers screen in bulk; disabled until the user turns it on -->
+        <service android:name=".BlockListAccessibilityService" android:label="Spam Reporter: block numbers"
+            android:enabled="false" android:exported="false"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter><action android:name="android.accessibilityservice.AccessibilityService" /></intent-filter>
+            <meta-data android:name="android.accessibilityservice" android:resource="@xml/blocklist_a11y_config" />
+        </service>
         <!-- optional call blocking: only active if the user makes Spam Reporter the call screening app -->
         <service android:name=".SpamCallScreeningService" android:exported="true"
             android:permission="android.permission.BIND_SCREENING_SERVICE">

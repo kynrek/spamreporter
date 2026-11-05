@@ -43,6 +43,9 @@ Those trackers are embedded in the government pages themselves, and blocking the
   incoming call. It checks the number against your spam list on the phone and answers block or allow. Nothing is sent anywhere.
 - Contacts, known numbers and anything marked not spam are never blocked. Each number can be un-blocked individually.
 - Texts can't be blocked by a third-party app. "Block texts" copies the number and opens the phone's own Blocked numbers screen.
+- Optional bulk text blocking: a second Accessibility service ("Spam Reporter: block numbers"), disabled until you turn it on.
+  Its config limits it to the Telecom settings packages (the Blocked numbers screen). It only acts while a job you started
+  is pending: it taps "Add a number", types the number and taps Block, or taps a row's Unblock. It reads nothing else.
 
 ## At rest
 - **Encryption:** all app data is in app-private storage, encrypted with AES-256-GCM. The key is generated in the Android Keystore,

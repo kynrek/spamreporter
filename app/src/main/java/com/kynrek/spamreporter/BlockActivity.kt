@@ -76,6 +76,33 @@ class BlockActivity : AppCompatActivity() {
                 if (it && !Community.downloadOn(me)) toast("Turn on \"Use the community spam list\" in Settings → Community first")
                 else CallBlock.setCommunity(me, it) }
 
+            // ---- texts: optional bulk fill of the phone's Blocked numbers screen (Accessibility, that screen only)
+            add(section("Block texts"))
+            val bulkOn = Sources.bulkBlock(me); val granted = Sources.bulkBlockGranted(me)
+            val textAdded = TextBlock.added(me)
+            add(card {
+                addView(LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER_VERTICAL
+                    addView(text("Fill in the Blocked numbers screen for me", 15f, true), LinearLayout.LayoutParams(0, -2, 1f))
+                    addView(MaterialSwitch(context).apply { isChecked = bulkOn; setOnCheckedChangeListener { _, v ->
+                        Sources.setBulkBlock(me, v)
+                        if (v && !Sources.bulkBlockGranted(me)) explainAccess()
+                        render() } })
+                })
+                if (bulkOn) addView(chip(if (granted) "Accessibility access on" else "Accessibility access needed ›", if (granted) GREEN else AMBER).apply {
+                    if (!granted) { isClickable = true; setOnClickListener { openAccess() } } }, LinearLayout.LayoutParams(-2, -2))
+                addView(text("Optional. The phone's Blocked numbers list stops both calls and texts, but only the phone's own apps can add to it. " +
+                    "With this on, Spam Reporter opens that screen and types each number in for you, so you can block them all at once — " +
+                    "and undo any one. It needs Accessibility access, which Android uses for apps that tap buttons on screen; Spam Reporter's " +
+                    "is limited to that one Blocked numbers screen and only acts while a job you started is running. " +
+                    "Off: use \"Block texts\" on each number and add it yourself.", 12f, alpha = 0.7f), lp(top = dp(4)))
+                if (bulkOn && granted) {
+                    val todo = list.map { it.d }.filter { it !in un && it !in textAdded }
+                    addView(MaterialButton(context).apply { text = if (todo.isEmpty()) "All numbers are blocked for texts" else "Block texts for all ${todo.size} numbers"
+                        isEnabled = todo.isNotEmpty(); setOnClickListener { runTextJob(add = todo) } }, lp(top = dp(8)))
+                }
+                TextBlock.status.takeIf { it.isNotBlank() }?.let { addView(text(it, 12f, alpha = 0.7f), lp(top = dp(4))) }
+            }, dp(8))
+
             val log = CallBlock.log(me)
             if (log.isNotEmpty()) {
                 add(section("Recently blocked calls"))
@@ -90,6 +117,7 @@ class BlockActivity : AppCompatActivity() {
                 add(card(12) {
                     addView(LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER_VERTICAL
                         addView(text(Phone.dashed(e.d), 16f, true), LinearLayout.LayoutParams(0, -2, 1f))
+                        if (e.d in textAdded) addView(chip("Texts blocked", RED), LinearLayout.LayoutParams(-2, -2).apply { rightMargin = dp(6) })
                         addView(chip(if (isBlocked) (if (active) "Calls blocked" else "Will block") else "Allowed", if (isBlocked) RED else GREEN))
                     })
                     addView(text(listOfNotNull("You marked spam".takeIf { e.fromMarked }, "Community".takeIf { e.fromCommunity }).joinToString(" · "),
@@ -97,12 +125,34 @@ class BlockActivity : AppCompatActivity() {
                     addView(LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL
                         addView(borderless(if (isBlocked) "Undo (allow)" else "Block again") {
                             CallBlock.setUnblocked(me, e.d, isBlocked); render() })
-                        addView(borderless("Block texts") { blockTexts(e.d) })
+                        if (e.d in textAdded) addView(borderless("Unblock texts") {
+                            if (Sources.bulkBlock(me) && Sources.bulkBlockGranted(me)) runTextJob(remove = listOf(e.d))
+                            else { TextBlock.mark(me, e.d, false); openBlockedScreen(); toast("Tap the X next to ${Phone.dashed(e.d)} to unblock it") } })
+                        else addView(borderless("Block texts") {
+                            if (Sources.bulkBlock(me) && Sources.bulkBlockGranted(me)) runTextJob(add = listOf(e.d)) else blockTexts(e.d) })
                     })
                 }, dp(6))
             }
         }
     }
+
+    private fun openBlockedScreen() = runCatching { startActivity(getSystemService(TelecomManager::class.java).createManageBlockedNumbersIntent()) }.isSuccess
+
+    /** Hand a job to the Accessibility helper and open the phone's Blocked numbers screen; it comes back here when done. */
+    private fun runTextJob(add: List<String> = emptyList(), remove: List<String> = emptyList()) {
+        TextBlock.toAdd = add; TextBlock.toRemove = remove; TextBlock.status = "Working…"
+        if (!openBlockedScreen()) { TextBlock.toAdd = emptyList(); TextBlock.toRemove = emptyList(); toast("Couldn't open the phone's Blocked numbers screen") }
+    }
+
+    private fun openAccess() { runCatching { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
+        toast("Tap Downloaded apps → \"Spam Reporter: block numbers\" → turn it on") }
+
+    private fun explainAccess() = com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
+        .setTitle("Allow Accessibility access?")
+        .setMessage("This is optional. To block texts in bulk, Spam Reporter types your spam numbers into the phone's own Blocked numbers " +
+            "screen for you. Android requires Accessibility access for that.\n\nSpam Reporter's access is limited to that one screen and only " +
+            "acts while a job you started is running. Without it, you can still block each number yourself.")
+        .setNegativeButton("Not now", null).setPositiveButton("Open settings") { _, _ -> openAccess() }.show()
 
     /** Copy the number and open the phone's own Blocked numbers screen (only the phone/SMS app may add to it). */
     private fun blockTexts(d: String) {

@@ -1,3 +1,4 @@
 <resources>
     <string name="a11y_desc">Reads the Google Messages "Spam &amp; blocked" folder when you press Import in Spam Reporter, so RCS and SMS spam (sender, text, time) can be reported. It only reads com.google.android.apps.messaging and only while an import is running.</string>
+    <string name="a11y_block_desc">Optional. Adds or removes your spam numbers on the phone\'s own Blocked numbers screen when you tap "Block texts for all" or "Unblock" in Spam Reporter, so you don\'t have to type each one. It can only see that one screen (Phone settings → Blocked numbers) and only acts while a job you started is running.</string>
 </resources>

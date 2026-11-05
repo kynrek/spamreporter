@@ -165,7 +165,7 @@ class MainActivity : AppCompatActivity() {
     private fun confirmWipe() = MaterialAlertDialogBuilder(this).setTitle("Delete all data?")
         .setMessage("Removes your profile, imported messages and filing history from this phone, signs you out of the FCC and removes a saved FCC sign-in. Reports you already filed stay with the agencies.")
         .setNegativeButton("Cancel", null)
-        .setPositiveButton("Delete") { _, _ -> store.wipeAll(); getSharedPreferences("pace", MODE_PRIVATE).edit().clear().apply(); FccAccount.clearLocal(this); FccLogin.forget(this); Community.wipe(this); CallBlock.wipe(this); toast("All data deleted"); render() }
+        .setPositiveButton("Delete") { _, _ -> store.wipeAll(); getSharedPreferences("pace", MODE_PRIVATE).edit().clear().apply(); FccAccount.clearLocal(this); FccLogin.forget(this); Community.wipe(this); CallBlock.wipe(this); TextBlock.wipe(this); toast("All data deleted"); render() }
         .show()
 
     private var thenSpamFolder = false
