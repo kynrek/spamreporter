@@ -88,6 +88,7 @@ object Jobs {
     }
 
     /** [compact] = safety-net retry: much shorter text, in case a long one is what stopped the form from submitting. */
+    const val FCC_DESC_MAX = 2000
     fun payload(c: SenderCase, p: Profile, compact: Boolean = false): JSONObject {
         val dnc = p.dncRegisteredOn.ifBlank { null }
         val when_ = "${longDate.format(Date(c.last.ts))} at ${hm.format(Date(c.last.ts))}"
@@ -111,8 +112,10 @@ object Jobs {
         return JSONObject()
             .put("profile", prof).put("sender", c.dashed).put("senderDigits", c.digits)
             .put("subject", "$kind text from ${c.dashed} to ${p.phoneDashed()}".take(70))
-            // the complaint description has no practical length limit: every text, in full
-            .put("desc", clean(desc) + "\n\nMessage text as received:\n" + fit(stamped, if (compact) 2500 else 12000, "\n") { (t, b) -> "$t $b" })
+            // the FCC's Description box takes at most 2000 characters (counted by its editor) and silently refuses to submit
+            // anything longer, so the whole thing — intro + texts — is kept under that, with room to spare for line breaks
+            .put("desc", (clean(desc) + "\n\nMessage text as received:\n").let { head ->
+                head + fit(stamped, (if (compact) 1500 else FCC_DESC_MAX - 80) - head.length, "\n") { (t, b) -> "$t $b" } })
             .put("add", add)
             .put("date", longDate.format(Date(c.last.ts))).put("time", hm.format(Date(c.last.ts)).lowercase())
             .put("adv", if (c.category == Category.SURVEY) "No" else "Yes")

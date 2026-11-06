@@ -171,6 +171,10 @@ class SettingsActivity : AppCompatActivity() {
 
             add(section("Filing"))
             val prefs = getSharedPreferences("settings", MODE_PRIVATE)
+            add(toggle("Status notification while filing", "Shows \"X of N filed\" with a progress bar in your notifications while reports " +
+                "are being filed, so you can switch apps or lock the phone. Off: Android still shows a small silent \"Spam Reporter is filing\" " +
+                "notification (required to keep filing in the background), without the progress.",
+                FilingService.statusOn(this@SettingsActivity), null) { on -> FilingService.setStatusOn(this@SettingsActivity, on) })
             add(toggle("Watch mode", "Scrolls to and highlights each field as the form is filled, so you can follow along. " +
                 "Adds about 30 seconds per report.", prefs.getBoolean("watch", false), null) { on -> prefs.edit().putBoolean("watch", on).apply() })
             add(card {

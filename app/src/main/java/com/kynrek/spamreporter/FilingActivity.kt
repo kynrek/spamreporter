@@ -57,6 +57,11 @@ class FilingActivity : AppCompatActivity() {
     private lateinit var progress: LinearProgressIndicator
     private lateinit var store: Store
     private lateinit var lanesBox: LinearLayout
+    private var stack: android.widget.FrameLayout? = null      // watch off: WebViews stacked here...
+    private var dash: LinearLayout? = null                     // ...under this progress panel
+    private val ticker = android.os.Handler(android.os.Looper.getMainLooper())
+    private var avgMs = 60_000L                                 // running average time per report (for the lane bars)
+    private val tick = object : Runnable { override fun run() { lanes.forEach { it.tickUi() }; ticker.postDelayed(this, 500) } }
     private val lanes = mutableListOf<Lane>()
     private var job: Job? = null
     /** One submit (real tap / real key entry) at a time across lanes, spaced apart. */
@@ -86,7 +91,7 @@ class FilingActivity : AppCompatActivity() {
                     text = "Start filing"; setOnClickListener {
                         if (text == "Done") finish()   // after a run: close, don't start another pass
                         else if (job?.isActive == true) { job?.cancel(); text = "Start filing"; log("Stopping after the current reports…", "Finished reports are saved and skipped next time.") }
-                        else { text = "Stop"; preview.visibility = android.view.View.GONE; job = lifecycleScopeLaunch { runQueue(); text = "Done" } } } }, lp(top = dp(8)))
+                        else { askBackground(); text = "Stop"; preview.visibility = android.view.View.GONE; job = lifecycleScopeLaunch { runQueue(); text = "Done" } } } }, lp(top = dp(8)))
             })
             // what will be filed, before anything is sent: one card per report
             preview = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL
@@ -110,13 +115,26 @@ class FilingActivity : AppCompatActivity() {
                 }) }
             }
             add(preview, dp(8))
-            add(text("Live view — your data goes only to the agency sites; trackers on these pages are blocked.", 12f, alpha = 0.6f), dp(4))
+            add(text(if (watch) "Live view — your data goes only to the agency sites; trackers on these pages are blocked."
+                else "Your data goes only to the agency sites; trackers on these pages are blocked. Turn on Watch mode in Settings to see the forms being filled.",
+                12f, alpha = 0.6f), dp(4))
             lanesBox = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
-            add(lanesBox, dp(8))
+            if (watch) add(lanesBox, dp(8))
+            else {
+                // The forms still have to be on screen at full size (the Submit button gets a real tap), so the WebViews are
+                // stacked in one block and covered by the progress panel, which is opaque and drawn on top.
+                stack = android.widget.FrameLayout(context)
+                dash = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL; isClickable = true
+                    setBackgroundColor(Ui.run { context.attr(android.R.attr.colorBackground) }); setPadding(0, dp(4), 0, dp(4)) }
+                // fixed height on purpose (not add(), which would make it wrap content): inside the scrolling screen a wrap-content
+                // WebView grows to the whole page's length, and the real tap on Submit then misses
+                addView(stack, LinearLayout.LayoutParams(-1, dp(420)).apply { topMargin = dp(8) })
+            }
         }
         this.progress = progress
         val n = minOf(parallel, maxOf(Jobs.pending(store).size, 1))
         repeat(n) { i -> lanes += Lane(i, n) }
+        stack?.addView(dash, android.widget.FrameLayout.LayoutParams(-1, -1))   // panel last = on top
         val p = store.profile
         if (!p.complete() || !p.attested) { log("Profile or attestation missing", "Complete step 1 first."); progress.visibility = android.view.View.GONE; return }
         log("Check the list below, then tap Start filing", when {
@@ -129,7 +147,7 @@ class FilingActivity : AppCompatActivity() {
 
     private fun lifecycleScopeLaunch(block: suspend CoroutineScope.() -> Unit) = CoroutineScope(Dispatchers.Main + SupervisorJob()).launch(block = block)
     override fun onDestroy() {
-        job?.cancel()
+        job?.cancel(); ticker.removeCallbacks(tick); FilingService.stop(this)
         // leave nothing behind in the WebViews: cookies, cache, storage, form data
         lanes.forEach { it.web.clearCache(true); it.web.clearFormData(); it.web.clearHistory() }
         WebStorage.getInstance().deleteAllData()
@@ -137,13 +155,34 @@ class FilingActivity : AppCompatActivity() {
         if (!FccAccount.likelySignedIn(this)) CookieManager.getInstance().removeAllCookies(null)
         lanes.forEach { it.web.destroy() }; super.onDestroy()
     }
+    /** First run: let the status notification show (Android 13+ asks), and offer to lift battery limits so filing keeps
+     *  going with the screen off. Both are Android's own prompts; the user decides. Asked once each. */
+    private fun askBackground() {
+        val prefs = getSharedPreferences("settings", MODE_PRIVATE)
+        if (android.os.Build.VERSION.SDK_INT >= 33 && FilingService.statusOn(this) &&
+            checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED &&
+            !prefs.getBoolean("asked_notif", false)) { prefs.edit().putBoolean("asked_notif", true).apply()
+            requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 5) }
+        val pm = getSystemService(android.os.PowerManager::class.java)
+        if (!pm.isIgnoringBatteryOptimizations(packageName) && !prefs.getBoolean("asked_battery", false)) {
+            prefs.edit().putBoolean("asked_battery", true).apply()
+            runCatching { startActivity(android.content.Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                android.net.Uri.parse("package:$packageName"))) }
+        }
+    }
+
     private fun log(s: String, detail: String = "") { runOnUiThread { status.text = s; sub.text = detail } }
 
     private suspend fun runQueue() {
         // marks a run as in progress; if the app is killed (closed by the system, or updated) the home screen sees this
         // flag still set and offers to resume. Cleared when the run finishes or the user stops / leaves.
         Interrupted.begin(this)
-        try { runQueueInner() } finally { Interrupted.end(this) }
+        // keep going when the app is in the background or the screen is off: foreground service + wake lock while filing
+        // while this screen is in front, don't let the phone doze off mid-run (with the screen off nothing is drawn, and
+        // some form steps run slower); filing still continues if the screen is turned off or another app is opened
+        FilingService.start(this); ticker.post(tick); window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        try { runQueueInner() } finally { Interrupted.end(this); FilingService.stop(this); ticker.removeCallbacks(tick)
+            window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
     }
 
     private suspend fun runQueueInner() {
@@ -160,17 +199,22 @@ class FilingActivity : AppCompatActivity() {
             else "Not signed in to the FCC: limited to $FCC_PER_HOUR per hour; the app waits automatically. Sign in on the home screen to go faster.")
         runOnUiThread { progress.visibility = android.view.View.VISIBLE; progress.isIndeterminate = false; progress.max = maxOf(queue.size, 1) }
         // all lanes run on the main thread, so taking the next item and counting need no locking
-        var next = 0; var done = 0; var failedInARow = 0; var whySingle = ""
+        var next = 0; var done = 0; var filed = 0; var failedInARow = 0; var whySingle = ""
+        fun overall() { val t = "$filed of ${queue.size} filed" + (if (done > filed) " · ${done - filed} didn't go through" else "")
+            log(t, if (lanes.size > 1) "${lanes.size} at a time" + (if (signedIn) " · submissions spaced ${MIN_SUBMIT_GAP_MS / 1000}s+ apart" else "") else "")
+            FilingService.update(this@FilingActivity, t, done, queue.size) }
+        overall()
         val failures = mutableListOf<String>()
         coroutineScope { for (lane in lanes) launch {
             while (isActive) {
                 if (lane.idx > 0 && singleLane) { lane.label("stopped — $whySingle, so lane 1 files the rest one at a time"); break }
-                val i = next++; if (i >= queue.size) break
+                val i = next++; if (i >= queue.size) { lane.label("finished"); break }
                 val (c, agency) = queue[i]
                 // re-check right before filing (an earlier run, or a retry, may have just covered these texts)
                 if (c.msgs.all { store.reported(it, agency) }) { done++; continue }
                 lane.label("${agency}: ${c.dashed} · ${i + 1} of ${queue.size} · ${c.category.name.lowercase()}")
-                if (lanes.size == 1) log("${agency}: ${c.dashed}", "${i + 1} of ${queue.size} · ${c.category.name.lowercase()}")
+                if (lanes.size == 1 && stack == null) log("${agency}: ${c.dashed}", "${i + 1} of ${queue.size} · ${c.category.name.lowercase()}")
+                lane.begin()
                 // a report that has started is finished and recorded even if Stop is tapped — Stop takes effect between reports,
                 // so a submission is never left unrecorded (which could otherwise lead to filing it twice)
                 val r = withContext(NonCancellable) {
@@ -191,14 +235,15 @@ class FilingActivity : AppCompatActivity() {
                 done++
                 if (BuildConfig.DEBUG) android.util.Log.i("SpamReporter", "filing $agency ${c.dashed}: ${r.take(200)}")
                 val why = r.removePrefix("error:").take(100)
-                if (r.startsWith("ok:")) failedInARow = 0 else { failedInARow++; failures += "$agency ${c.dashed}: $why" }
+                if (r.startsWith("ok:")) { failedInARow = 0; filed++ } else { failedInARow++; failures += "$agency ${c.dashed}: $why" }
+                lane.end(r.startsWith("ok:"))
                 // Only a real FCC rate limit, or several failures in a row (site trouble), drops to one lane. A single form
                 // error or timeout doesn't slow the other lanes; that report is just retried next run.
                 val rateLimited = r.contains("rate limited")
                 if (!r.startsWith("ok:") && !singleLane && lanes.size > 1 && (rateLimited || failedInARow >= 3)) { singleLane = true
                     whySingle = if (rateLimited) "the FCC hit its rate limit" else "$failedInARow reports in a row failed"
                     log("Continuing one at a time: $whySingle", why) }
-                else if (lanes.size > 1) log("$done of ${queue.size} done", if (signedIn) "${lanes.size} at a time · submissions spaced ${MIN_SUBMIT_GAP_MS / 1000}s+ apart" else "")
+                else overall()
                 runOnUiThread { progress.setProgressCompat(done, true) }
                 lane.label("${agency}: ${c.dashed} · " + if (r.startsWith("ok:")) "filed ${r.removePrefix("ok:")}" else "failed: $why")
             }
@@ -229,7 +274,7 @@ class FilingActivity : AppCompatActivity() {
         private val title = text(if (of > 1) "Lane ${idx + 1}" else "", 12f, true, alpha = 0.7f)
         inner class Bridge { @JavascriptInterface fun result(s: String) { results.trySend(s) } }
 
-        val web: WebView = WebView(this@FilingActivity).apply {
+        val web: WebView = KeepRunningWebView(this@FilingActivity).apply {
             settings.javaScriptEnabled = true; settings.domStorageEnabled = true
             settings.allowFileAccess = false; settings.allowContentAccess = false
             settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
@@ -239,6 +284,9 @@ class FilingActivity : AppCompatActivity() {
             settings.saveFormData = false; settings.setGeolocationEnabled(false)
             if (WebViewFeature.isFeatureSupported(WebViewFeature.SAFE_BROWSING_ENABLE)) WebSettingsCompat.setSafeBrowsingEnabled(settings, true)
             addJavascriptInterface(Bridge(), "AndroidBridge")
+            // keep the page's renderer process running at full priority when the app is in the background or the screen is
+            // off (by default Android lowers it as soon as the WebView isn't visible, and the renderer gets frozen)
+            setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false)
             webViewClient = object : WebViewClient() {
                 override fun onPageFinished(v: WebView, url: String) { pages.trySend(url) }
                 override fun onPageCommitVisible(v: WebView, url: String) { commits.trySend(url) }
@@ -248,16 +296,40 @@ class FilingActivity : AppCompatActivity() {
                 override fun shouldOverrideUrlLoading(v: WebView, r: WebResourceRequest) = (!NetPolicy.allowed(r.url)).also { if (it) NetPolicy.note(r.url) }
             }
         }
+        // progress panel row (watch off): "Lane 2 · FCC 720-…", a bar that fills over a typical report's time, and a running timer
+        private val rowTitle = text("Lane ${idx + 1} · waiting", 13f, true)
+        private val rowTime = text("0:00", 13f, alpha = 0.7f)
+        private val rowBar = LinearProgressIndicator(this@FilingActivity).apply { max = 1000; trackCornerRadius = dp(4); trackThickness = dp(8) }
+        private var startedAt = 0L; private var running = false
         init {
-            if (of > 1) lanesBox.addView(title, lp(top = if (idx == 0) 0 else dp(10)))
-            lanesBox.addView(MaterialCardView(this@FilingActivity).apply { addView(web) },
-                LinearLayout.LayoutParams(-1, dp(if (of > 1) 420 else 520)).apply { topMargin = dp(4) })
+            if (stack != null) {
+                stack!!.addView(MaterialCardView(this@FilingActivity).apply { addView(web) }, android.widget.FrameLayout.LayoutParams(-1, -1))
+                dash!!.addView(LinearLayout(this@FilingActivity).apply { orientation = LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER_VERTICAL
+                    addView(rowTitle, LinearLayout.LayoutParams(0, -2, 1f)); addView(rowTime) }, lp(top = if (idx == 0) 0 else dp(14)))
+                dash!!.addView(rowBar, lp(top = dp(4)))
+            } else {
+                if (of > 1) lanesBox.addView(title, lp(top = if (idx == 0) 0 else dp(10)))
+                lanesBox.addView(MaterialCardView(this@FilingActivity).apply { addView(web) },
+                    LinearLayout.LayoutParams(-1, dp(if (of > 1) 420 else 520)).apply { topMargin = dp(4) })
+            }
         }
-        fun label(s: String) { if (lanes.size > 1) runOnUiThread { title.text = "Lane ${idx + 1} · $s" } }
+        fun label(s: String) { runOnUiThread { if (stack != null) rowTitle.text = "Lane ${idx + 1} · $s" else if (lanes.size > 1) title.text = "Lane ${idx + 1} · $s" } }
+        /** A report starts on this lane: reset the bar and timer. */
+        fun begin() = runOnUiThread { startedAt = SystemClock.elapsedRealtime(); running = true
+            rowBar.setIndicatorColor(Ui.NAVY); rowBar.setProgressCompat(0, false) }
+        /** It finished: fill (green) or mark failed (red); the timer stops at its final time. */
+        fun end(ok: Boolean) = runOnUiThread { running = false
+            val took = SystemClock.elapsedRealtime() - startedAt; if (ok) avgMs = (avgMs * 3 + took) / 4
+            rowBar.setIndicatorColor(if (ok) Ui.GREEN else Ui.RED); rowBar.setProgressCompat(1000, true); tickTime(took) }
+        private fun tickTime(ms: Long) { rowTime.text = "%d:%02d".format(ms / 60000, ms / 1000 % 60) }
+        fun tickUi() { if (!running) return; val e = SystemClock.elapsedRealtime() - startedAt; tickTime(e)
+            rowBar.setProgressCompat((e * 950 / maxOf(avgMs, 1)).toInt().coerceAtMost(950), true) }   // creeps to 95% until done
 
         /** Navigate and return as soon as the new page is committed; the fill scripts wait for the elements they need. */
         private suspend fun open(url: String): String { while (commits.tryReceive().isSuccess) {}; while (pages.tryReceive().isSuccess) {}
-            web.loadUrl(url); return withTimeout(60_000) { commits.receive() } }
+            web.loadUrl(url); return withTimeout(60_000) { firstOf() } }
+        /** First paint, or (when nothing is painted because the screen is off / app in background) page finished. */
+        private suspend fun firstOf(): String = kotlinx.coroutines.selects.select { commits.onReceive { it }; pages.onReceive { it } }
         suspend fun load(url: String): String { while (pages.tryReceive().isSuccess) {}; web.loadUrl(url); return withTimeout(60_000) { pages.receive() } }
         private suspend fun runScript(asset: String, payload: JSONObject, step: String? = null): JSONObject {
             while (results.tryReceive().isSuccess) {}
@@ -291,7 +363,7 @@ class FilingActivity : AppCompatActivity() {
             }.let { if (it == "limit") return fileFcc(payload) }   // another lane used the last anonymous slot: wait and refill
             // the ticket number is in the URL we land on, known at first paint
             // with several lanes the FCC can be slow to answer: wait up to a minute, then look at the page instead of giving up blind
-            var url = withTimeoutOrNull(60_000) { commits.receive() } ?: evalSync("location.href").trim('"')
+            var url = withTimeoutOrNull(60_000) { firstOf() } ?: evalSync("location.href").trim('"')
             if (Regex("/requests/\\d+").find(url) == null && !url.contains("return_to")) url = withTimeoutOrNull(8_000) { pages.receive() } ?: url
             // signed in: lands on /hc/en-us/requests/<ticket>; anonymous: home page with return_to, ticket arrives by email
             val ticket = Regex("/hc/[a-z-]+/requests/(\\d+)").find(url)?.groupValues?.get(1)
@@ -303,7 +375,7 @@ class FilingActivity : AppCompatActivity() {
                 if (limited) { saveFccTimes(List(FCC_PER_HOUR) { System.currentTimeMillis() }); "error:rate limited (will retry next run)" }
                 else {
                     // say what the page shows: a Cloudflare check, the form's own error messages, or just where it is
-                    val why = evalSync("(()=>{const t=document.body.innerText;if(/verify you are human|Checking your browser|cf-turnstile/i.test(t+document.body.innerHTML))return 'Cloudflare check';" +
+                    val why = evalSync("(()=>{const t=document.body.innerText;if(/verify you are human|Checking your browser|cf-turnstile/i.test(t+document.body.innerHTML))return 'Cloudflare check';if(/Characters remaining: -\\d/.test(t))return 'text too long for the form';" +
                         "const e=[...document.querySelectorAll('[role=alert],.notification-error,[data-garden-id=\"forms.input_message\"]')].map(x=>x.innerText.trim()).filter(Boolean);" +
                         "return e.slice(0,3).join('; ')})()").trim('"')
                     "error:not submitted" + (if (why.isNotBlank() && why != "null") " — $why" else "") + " ($url)"
@@ -316,7 +388,7 @@ class FilingActivity : AppCompatActivity() {
             payload.put("watch", watch)
             var r = runScript("ftc.js", payload, "assistant")
             if (!r.optBoolean("ok")) return "error:" + r.optString("error")
-            withTimeoutOrNull(4_000) { commits.receive() }; delay(300)   // next page (or in-page step) — the form script waits for its fields
+            withTimeoutOrNull(4_000) { firstOf() }; delay(300)   // next page (or in-page step) — the form script waits for its fields
             r = runScript("ftc.js", payload, "form")
             if (!r.optBoolean("ok")) return "error:" + r.optString("error")
             // key events go to the focused view, so typing the number and submitting happen one lane at a time
@@ -368,4 +440,20 @@ object Interrupted {
     /** Reports that were mid-submission when it stopped — they may or may not have reached the agency. */
     fun unsure(c: android.content.Context): Set<String> = p(c).getStringSet("inflight", null) ?: emptySet()
     fun dismiss(c: android.content.Context) = p(c).edit().clear().apply()
+}
+
+/** A WebView whose page keeps running when the app is in the background or the screen is off. Android tells a WebView
+ *  its window went invisible, and Chromium then marks the page hidden and stops its timers — the FCC/FTC form scripts
+ *  would just stop mid-report. Filing pages always believe they're visible; the window itself is still really hidden. */
+class KeepRunningWebView(c: android.content.Context) : WebView(c) {
+    override fun onWindowVisibilityChanged(visibility: Int) {
+        super.onWindowVisibilityChanged(android.view.View.VISIBLE)   // Android reports GONE when the app is in the background
+    }
+    override fun onVisibilityChanged(changedView: android.view.View, visibility: Int) {
+        super.onVisibilityChanged(changedView, android.view.View.VISIBLE)
+    }
+    // the FTC phone field is typed with real key presses, which the page ignores unless it thinks its window has focus —
+    // and the window loses focus as soon as another app is in front
+    override fun onWindowFocusChanged(hasWindowFocus: Boolean) = super.onWindowFocusChanged(true)
+    override fun hasWindowFocus() = true
 }

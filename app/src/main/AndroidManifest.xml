@@ -7,6 +7,13 @@
     <!-- Optional saved FCC sign-in is unlocked with fingerprint / face / PIN. -->
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- keep filing running in the background / with the screen off (only while a run is going) -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!-- Android 11+ hides other apps unless declared: needed to open Google Messages for the spam-folder scan. -->
@@ -28,6 +35,7 @@
 
         <activity android:name=".KnownNumbersActivity" />
         <activity android:name=".BlockActivity" android:exported="false" />
+        <service android:name=".FilingService" android:exported="false" android:foregroundServiceType="dataSync" />
         <!-- optional: fills in the phone's Blocked numbers screen in bulk; disabled until the user turns it on -->
         <service android:name=".BlockListAccessibilityService" android:label="Spam Reporter: block numbers"
             android:enabled="false" android:exported="false"
@@ -52,7 +60,7 @@
         <activity android:name=".SettingsActivity" android:exported="false" />
         <activity android:name=".MarkSpamActivity" android:exported="false" />
         <activity android:name=".HistoryActivity" android:exported="false" />
-        <activity android:name=".FilingActivity" android:configChanges="orientation|screenSize" />
+        <activity android:name=".FilingActivity" android:launchMode="singleTop" android:configChanges="orientation|screenSize" />
 
         <!-- Optional (Settings, off by default; enabled at runtime). RCS method 1: read Google Messages' "Spam & blocked" folder (existing messages, RCS + SMS) -->
         <service

@@ -31,7 +31,7 @@ try {
   await pick('Unwanted Calls/Texts Sub', 'All Other Unwanted Calls/Texts');
   await pick('Did the call/message that you are reporting advert', P.adv);
   if (P.adv == 'Yes') await pick('Type of Property', P.cat);
-  if (P.cat == 'Other') {
+  if (P.adv == 'Yes' && P.cat == 'Other') {   // (with "No" the property question, and so this field, never appears)
     // choosing "Other" reveals a required free-text "Type of Property, Goods, or Services" field
     const el = await until(() => [...document.querySelectorAll('form input:not([type=hidden]),form textarea')].find(i => i.offsetParent &&
       i.getAttribute('role') != 'combobox' &&
@@ -69,7 +69,7 @@ try {
   ed.ckeditorInstance.setData(P.desc.split('\n').map(l => '<p>' + (l.replace(/&/g, '&amp;').replace(/</g, '&lt;') || '&nbsp;') + '</p>').join(''));  // one paragraph per line
   const att = inp('Attest'); await show(att); if (!att.checked) att.click(); await until(() => att.checked, 1000);
   const empty = combos().filter(c => (c.innerText || '').trim().startsWith('-')).map(c => lab(c).slice(0, 40));
-  const b = document.querySelector('form button[type=submit]'); b.scrollIntoView({ block: 'center' }); if (P.watch) { b.style.outline = '4px solid #d7263d'; await sl(1200) } else await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));  // layout settled after scroll
+  const b = document.querySelector('form button[type=submit]'); b.scrollIntoView({ block: 'center' }); if (P.watch) { b.style.outline = '4px solid #d7263d'; await sl(1200) } else await Promise.race([new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))), sl(150)]);  // layout settled after scroll (no frames come while the screen is off, so don't wait for them forever)
   const r = b.getBoundingClientRect();
   const ok = !!inp('Date of Your Issue').value && document.querySelector('[name="request[description]"]').value.length > 20 && att.checked && empty.length == 0;
   return JSON.stringify({ ok, empty, x: r.left + r.width / 2, y: r.top + r.height / 2, dpr: window.devicePixelRatio });
