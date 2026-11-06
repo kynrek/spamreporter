@@ -219,8 +219,29 @@ class MarkSpamActivity : AppCompatActivity() {
                 tag = LinearLayout(context); addView(tag)
             })
             if (replied) addView(chip("You responded", Ui.GREEN), LinearLayout.LayoutParams(-2, -2).apply { leftMargin = dp(8) })
-            addView(text("${g.ms.size} text${if (g.ms.size == 1) "" else "s"} · last ${fmt.format(Date(g.last))}\n${g.ms.last().body.take(160)}",
-                13f * k, color = fg, alpha = 0.8f), lp(top = dp(2)))
+            // tap the card: show every text from this sender in full (oldest first, like the conversation); tap again to collapse
+            val n = g.ms.size
+            val summary = "$n text${if (n == 1) "" else "s"} · last ${fmt.format(Date(g.last))}"
+            val latest = g.ms.last().body
+            val more = n > 1 || latest.length > 160
+            val preview = text("$summary\n${if (latest.length > 160) latest.take(160).trimEnd() + "…" else latest}" +
+                if (more) "\n${if (n > 1) "Tap to show all $n texts" else "Tap to show the full text"}  \u25BE" else "",
+                13f * k, color = fg, alpha = 0.8f)
+            val full = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE }
+            addView(preview, lp(top = dp(2))); addView(full, lp(top = dp(2)))
+            if (more) {
+                var open = false
+                fun fill() { if (full.childCount > 0) return
+                    full.addView(text(summary, 13f * k, color = fg, alpha = 0.8f))
+                    for (m in g.ms) {
+                        full.addView(text(fmt.format(Date(m.ts)), 12f * k, true, fg, 0.65f), lp(top = dp(10)))
+                        full.addView(text(m.body, 14f * k, color = fg).apply { setTextIsSelectable(false) }, lp(top = dp(2)))
+                    }
+                    full.addView(text("Tap to collapse  \u25B4", 12f * k, color = fg, alpha = 0.6f), lp(top = dp(10)))
+                }
+                setOnClickListener { open = !open; if (open) fill()
+                    preview.visibility = if (open) View.GONE else View.VISIBLE; full.visibility = if (open) View.VISIBLE else View.GONE }
+            }
         }.apply { if (bg != 0) setCardBackgroundColor(bg) }
         status()
         if (isContact) return card
