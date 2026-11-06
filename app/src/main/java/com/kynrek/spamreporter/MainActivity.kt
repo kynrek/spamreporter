@@ -33,7 +33,8 @@ import com.kynrek.spamreporter.Ui.text
 class MainActivity : AppCompatActivity() {
     private val store by lazy { Store(this) }
 
-    override fun onResume() { super.onResume(); render(); Community.syncInBackground(this); Dnc.followUp(this) { render() } }
+    override fun onResume() { super.onResume(); render(); Community.syncInBackground(this); Dnc.followUp(this) { render() }
+        if (flowPending() && !MessagesAccessibilityService.running) { MessagesAccessibilityService.armed = false; continueFlow() } }
 
     private fun render() {
         val p = store.profile
@@ -60,8 +61,8 @@ class MainActivity : AppCompatActivity() {
                 text = "File $left new report${if (left == 1) "" else "s"}"; textSize = 16f; minimumHeight = dp(56)
                 backgroundTintList = android.content.res.ColorStateList.valueOf(RED)
                 setOnClickListener { fileReports(p) } }, dp(4))
-            add(text(if (scanOn) "Scanning reads your inbox, then opens Google Messages to read the Spam & blocked folder (RCS included)."
-                else "Scanning reads your SMS & MMS inbox; then tick the spam senders under \"Choose spam senders\".", 12f, alpha = 0.6f), dp(4))
+            add(text((if (scanOn) "Reads your inbox and the Spam & blocked folder in Google Messages (RCS included), "
+                else "Reads your SMS & MMS inbox, ") + "then takes you through choosing spam senders and filing the reports.", 12f, alpha = 0.6f), dp(4))
 
             Interrupted.stoppedAt(this@MainActivity)?.let { at ->
                 val unsure = Interrupted.unsure(this@MainActivity)
@@ -113,41 +114,48 @@ class MainActivity : AppCompatActivity() {
                     "Optional" to AMBER) { FccLogin.explainLock(this@MainActivity) })
             }
 
-            add(section("Collect messages"))
-            add(step(look, ++n, "Import SMS & MMS", "${msgs.count { it.source == Source.SMS || it.source == Source.MMS }} messages read from your inbox",
-                st(smsOk && msgs.isNotEmpty(), "Imported", "Tap to import")) { importSms() })
-            if (scanOn) add(step(look, ++n, "Scan Spam & blocked folder", getSharedPreferences("scan", MODE_PRIVATE).getString("last", null)
-                    ?.replaceFirstChar { it.uppercase() } ?: "Reads spam-flagged chats (RCS included) from Google Messages",
-                if (!a11yEnabled()) "Needs access" to AMBER else if (!MessagesAccessibilityService.connected) "Turn access off & on" to RED else "Tap to scan" to NAVY) { importSpamFolder() })
-            add(step(look, ++n, "Choose spam senders", (if (scanOn) "Add spam that Google Messages didn't flag" else "Tick which senders are spam") + " · swipe left = spam, right = not spam",
-                if (cases.isEmpty()) "Start here" to NAVY else null) { go(MarkSpamActivity::class.java) })
-            if (capOn) add(step(look, ++n, "Capture new spam & FCC tickets", "Saves new texts as they arrive, and FCC ticket numbers from email",
-                st(listenerEnabled(), "On", "Needs access", AMBER)) { startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) })
+            if (setupDone) add(fold(look, "collect", "Collect messages", "${msgs.size} texts · spam folder, choose senders, capture, blocking")) else add(section("Collect messages"))
+            if (!setupDone || "collect" in open) {
+                add(step(look, ++n, "Import SMS & MMS", "${msgs.count { it.source == Source.SMS || it.source == Source.MMS }} messages read from your inbox",
+                    st(smsOk && msgs.isNotEmpty(), "Imported", "Tap to import")) { importSms() })
+                if (scanOn) add(step(look, ++n, "Scan Spam & blocked folder", getSharedPreferences("scan", MODE_PRIVATE).getString("last", null)
+                        ?.replaceFirstChar { it.uppercase() } ?: "Reads spam-flagged chats (RCS included) from Google Messages",
+                    if (!a11yEnabled()) "Needs access" to AMBER else if (!MessagesAccessibilityService.connected) "Turn access off & on" to RED else "Tap to scan" to NAVY) { importSpamFolder() })
+                add(step(look, ++n, "Choose spam senders", (if (scanOn) "Add spam that Google Messages didn't flag" else "Tick which senders are spam") + " · swipe left = spam, right = not spam",
+                    if (cases.isEmpty()) "Start here" to NAVY else null) { go(MarkSpamActivity::class.java) })
+                if (capOn) add(step(look, ++n, "Capture new spam & FCC tickets", "Saves new texts as they arrive, and FCC ticket numbers from email",
+                    st(listenerEnabled(), "On", "Needs access", AMBER)) { startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) })
 
-            add(step(look, ++n, "Block spam numbers", "Turn away calls from spam numbers automatically; block texts in a tap or two. Undo any number.",
-                if (CallBlock.active(this@MainActivity)) "On" to GREEN else "Optional" to AMBER) { go(BlockActivity::class.java) })
+                add(step(look, ++n, "Block spam numbers", "Turn away calls from spam numbers automatically; block texts in a tap or two. Undo any number.",
+                    if (CallBlock.active(this@MainActivity)) "On" to GREEN else "Optional" to AMBER) { go(BlockActivity::class.java) })
+            }
 
-            add(section("Report"))
-            add(step(look, ++n, "Review senders", "${cases.count { it.category == Category.COMMERCIAL }} commercial · " +
-                "${cases.count { it.category == Category.POLITICAL }} political · ${cases.count { it.category == Category.SURVEY }} survey",
-                if (cases.isEmpty()) null else "Check" to NAVY) { go(ReviewActivity::class.java) })
-            add(step(look, ++n, "File reports", "New texts only — anything already reported is skipped",
-                if (!p.attested) "Attest first" to GREY else st(left == 0 && filedN > 0, "All filed", if (left == 0) "Nothing yet" else "$left to go")) { fileReports(p) })
-            add(step(look, ++n, "Report history", "Every report number, who it went to and when, with the texts — save as PDF",
-                if (filedN > 0) "$filedN" to GREEN else null) { go(HistoryActivity::class.java) })
-            add(step(look, ++n, "Export confirmation report", "CSV + Markdown with every ticket and report number, plus a history file", null) { export() })
-            add(step(look, ++n, "Import filing history", "Reports filed outside the app or on another phone — so they're never filed twice",
-                f.count { it.note == "imported" }.let { if (it > 0) "$it imported" to GREEN else null }) { pickHistory.launch(arrayOf("application/json", "text/plain", "*/*")) })
+            if (setupDone) add(fold(look, "report", "Report", if (left > 0) "$left to file · history, export" else "All filed · history, export")) else add(section("Report"))
+            if (!setupDone || "report" in open) {
+                add(step(look, ++n, "Review senders", "${cases.count { it.category == Category.COMMERCIAL }} commercial · " +
+                    "${cases.count { it.category == Category.POLITICAL }} political · ${cases.count { it.category == Category.SURVEY }} survey",
+                    if (cases.isEmpty()) null else "Check" to NAVY) { go(ReviewActivity::class.java) })
+                add(step(look, ++n, "File reports", "New texts only — anything already reported is skipped",
+                    if (!p.attested) "Attest first" to GREY else st(left == 0 && filedN > 0, "All filed", if (left == 0) "Nothing yet" else "$left to go")) { fileReports(p) })
+                add(step(look, ++n, "Report history", "Every report number, who it went to and when, with the texts — save as PDF",
+                    if (filedN > 0) "$filedN" to GREEN else null) { go(HistoryActivity::class.java) })
+                add(step(look, ++n, "Export confirmation report", "CSV + Markdown with every ticket and report number, plus a history file", null) { export() })
+                add(step(look, ++n, "Import filing history", "Reports filed outside the app or on another phone — so they're never filed twice",
+                    f.count { it.note == "imported" }.let { if (it > 0) "$it imported" to GREEN else null }) { pickHistory.launch(arrayOf("application/json", "text/plain", "*/*")) })
+            }
 
-            add(section("Privacy"))
-            add(text("Everything stays on this phone, encrypted with a key in the Android Keystore. The app has no analytics; " +
-                "it only connects to fcc.gov, ftc.gov and donotcall.gov, and blocks trackers on those pages. " +
-                (if (Community.shareOn(this@MainActivity) || Community.downloadOn(this@MainActivity))
-                    "You turned on the community list, so it also syncs with ${Community.HOST} (Settings → Community). "
-                 else "The optional community spam list (${Community.HOST}) is off unless you turn it on in Settings. ") +
-                "Your FCC password is only saved if you choose to, encrypted and unlocked with your fingerprint or PIN. Contacts (optional) are only compared on this phone.", 13f, alpha = 0.7f))
-            add(MaterialButton(context, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
-                text = "Delete all my data"; setTextColor(RED); setOnClickListener { confirmWipe() } }, dp(8))
+            if (setupDone) add(fold(look, "privacy", "Privacy", "Everything stays on this phone · delete all data")) else add(section("Privacy"))
+            if (!setupDone || "privacy" in open) {
+                add(text("Everything stays on this phone, encrypted with a key in the Android Keystore. The app has no analytics; " +
+                    "it only connects to fcc.gov, ftc.gov and donotcall.gov, and blocks trackers on those pages. " +
+                    (if (Community.shareOn(this@MainActivity) || Community.downloadOn(this@MainActivity))
+                        "You turned on the community list, so it also syncs with ${Community.HOST} (Settings → Community). "
+                     else "The optional community spam list (${Community.HOST}) is off unless you turn it on in Settings. ") +
+                    "Your FCC password is only saved if you choose to, encrypted and unlocked with your fingerprint or PIN. Contacts (optional) are only compared on this phone.", 13f, alpha = 0.7f))
+                add(MaterialButton(context, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+                    text = "Delete all my data"; setTextColor(RED); setOnClickListener { confirmWipe() } }, dp(8))
+            }
+
             MessagesAccessibilityService.lastStatus.takeIf { it.isNotBlank() && it != "idle" }?.let { add(text("Spam-folder import: $it", 12f, alpha = 0.5f), dp(12)) }
         }
     }
@@ -171,6 +179,18 @@ class MainActivity : AppCompatActivity() {
     private fun go(c: Class<*>) = startActivity(Intent(this, c))
 
     private var setupOpen = false
+    /** Sections the user opened (once setup is done, Collect messages / Report / Privacy start folded). */
+    private val open = mutableSetOf<String>()
+    /** A folded section: its title and a one-line summary; tap to open or close. */
+    private fun fold(look: CardStyle.Look, key: String, title: String, summary: String) = card(12) {
+        val fg = look.fgOrNull; val k = look.scale; val on = key in this@MainActivity.open
+        orientation = LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER_VERTICAL
+        addView(LinearLayout(context).apply { orientation = LinearLayout.VERTICAL
+            addView(text(title, 15f * k, true, fg)); addView(text(summary, 12f * k, color = fg, alpha = 0.7f).apply { maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END }) }, LinearLayout.LayoutParams(0, -2, 1f))
+        addView(text(if (on) "\u25B4" else "\u25BE", 20f * k, color = fg, alpha = 0.6f))
+    }.apply { if (look.bg != 0) setCardBackgroundColor(look.bg)
+        isClickable = true; setOnClickListener { if (!this@MainActivity.open.remove(key)) this@MainActivity.open += key; render() } }
     private fun check(k: Float, size: Int) = android.widget.TextView(this).apply { text = "\u2713"; gravity = android.view.Gravity.CENTER
         textSize = size * k; setTextColor(0xFFFFFFFF.toInt()); typeface = android.graphics.Typeface.DEFAULT_BOLD
         background = android.graphics.drawable.GradientDrawable().apply { shape = android.graphics.drawable.GradientDrawable.OVAL; setColor(GREEN) } }
@@ -217,12 +237,28 @@ class MainActivity : AppCompatActivity() {
             else wipeLocal() }
         .show()
 
-    private fun wipeLocal() { run { store.wipeAll(); getSharedPreferences("pace", MODE_PRIVATE).edit().clear().apply(); FccAccount.clearLocal(this); FccLogin.forget(this); Community.wipe(this); CallBlock.wipe(this); TextBlock.wipe(this); Dnc.wipe(this); FccAccount.forgetAccount(this); toast("All data deleted"); render() } }
+    private fun wipeLocal() { run { store.wipeAll(); getSharedPreferences("pace", MODE_PRIVATE).edit().clear().apply(); FccAccount.clearLocal(this); FccLogin.forget(this); Community.wipe(this); CallBlock.wipe(this); TextBlock.wipe(this); Dnc.wipe(this); setFlowPending(false); FccAccount.forgetAccount(this); toast("All data deleted"); render() } }
 
     private var thenSpamFolder = false
 
     /** One-tap scan: SMS/MMS inbox first, then the Messages Spam & blocked folder. */
+    /** "Scan for new spam" walks through everything: import texts (and the spam folder, if that's on) → Choose spam senders
+     *  (only if there's something new) → File reports (only if there's something to file). */
     private fun scanAll() { thenSpamFolder = true; importSms() }
+
+    private fun flowPending() = getSharedPreferences("settings", MODE_PRIVATE).getBoolean("scan_flow", false)
+    private fun setFlowPending(on: Boolean) = getSharedPreferences("settings", MODE_PRIVATE).edit().putBoolean("scan_flow", on).apply()
+
+    /** After the scan: the next useful screen, or a short note if there's nothing to do. */
+    private fun continueFlow() {
+        setFlowPending(false)
+        val toReview = MarkSpamActivity.reviewCount(this); val toFile = Jobs.pending(store).size
+        when {
+            toReview > 0 -> { toast("$toReview sender${if (toReview == 1) "" else "s"} to review"); startActivity(Intent(this, MarkSpamActivity::class.java).putExtra("flow", true)) }
+            toFile > 0 -> { toast("No new senders to choose · $toFile report${if (toFile == 1) "" else "s"} ready to file"); fileReports(store.profile) }
+            else -> toast("No new spam")
+        }
+    }
 
     private var importing: androidx.appcompat.app.AlertDialog? = null
     /** Spinning circle with a message, shown while something runs; can't be dismissed by tapping outside. */
@@ -242,15 +278,13 @@ class MainActivity : AppCompatActivity() {
             val r = runCatching { store.addMessages(SmsReader.readAll(this, store.spamSenders())) to MarkSpamActivity.reviewCount(this) }
             runOnUiThread { runCatching { busy.dismiss() }; importing = null
                 if (isFinishing || isDestroyed) return@runOnUiThread
-                val (n, toReview) = r.getOrElse { toast("Couldn't import texts: ${it.message}"); thenSpamFolder = false; return@runOnUiThread }
+                val (n, _) = r.getOrElse { toast("Couldn't import texts: ${it.message}"); thenSpamFolder = false; return@runOnUiThread }
                 render()
                 if (thenSpamFolder) { thenSpamFolder = false
-                    when {
-                        Sources.folderScan(this) -> { toast("Imported $n new messages"); importSpamFolder() }
-                        // nothing new to look at: stay here instead of opening an empty review screen
-                        toReview == 0 -> toast(if (n == 0) "No new messages" else "Imported $n new messages — nothing new to review")
-                        else -> { toast("$toReview sender${if (toReview == 1) "" else "s"} to review"); go(MarkSpamActivity::class.java) }
-                    } } else toast("Imported $n new messages") }
+                    // spam folder on: read it in Google Messages first; the flow continues when they come back (onResume)
+                    if (Sources.folderScan(this) && importSpamFolder()) { toast("Imported $n new messages"); setFlowPending(true) }
+                    else continueFlow()
+                } else toast("Imported $n new messages") }
         }.start()
     }
 
@@ -268,14 +302,14 @@ class MainActivity : AppCompatActivity() {
         return (Settings.Secure.getString(contentResolver, "enabled_notification_listeners") ?: "").split(':').any { it.equals(want, true) }
     }
 
-    private fun importSpamFolder() {
+    private fun importSpamFolder(): Boolean {
         if (!a11yEnabled()) {
             MaterialAlertDialogBuilder(this).setTitle("Allow access to Messages")
                 .setMessage("RCS chats aren't readable by other apps, so Spam Reporter reads your Spam & blocked folder from the screen.\n\n" +
                     "In the next screen, open Downloaded apps → Spam Reporter and turn it on. It only watches Google Messages, and only while an import is running.")
                 .setNegativeButton("Not now", null)
                 .setPositiveButton("Open settings") { _, _ -> startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }.show()
-            return
+            return false
         }
         if (!MessagesAccessibilityService.connected) {
             MaterialAlertDialogBuilder(this).setTitle("Restart Spam Reporter's access")
@@ -283,14 +317,15 @@ class MainActivity : AppCompatActivity() {
                     "In the next screen, open Downloaded apps → Spam Reporter, turn it off, then on again. Then come back and scan.")
                 .setNegativeButton("Not now", null)
                 .setPositiveButton("Open settings") { _, _ -> startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }.show()
-            return
+            return false
         }
         MessagesAccessibilityService.armed = true
         toast("In Messages: tap your profile icon → Spam & blocked. The import starts on its own; don't touch the screen until it's done.")
         val launch = packageManager.getLaunchIntentForPackage(MessagesAccessibilityService.PKG)
-        if (launch != null) startActivity(launch)
-        else MaterialAlertDialogBuilder(this).setTitle("Open Google Messages")
+        if (launch != null) { startActivity(launch); return true }
+        MaterialAlertDialogBuilder(this).setTitle("Open Google Messages")
             .setMessage("Couldn't open Google Messages automatically. Open it yourself, tap your profile icon → Spam & blocked, and the import will start on its own.")
             .setPositiveButton("OK", null).show()
+        return true
     }
 }

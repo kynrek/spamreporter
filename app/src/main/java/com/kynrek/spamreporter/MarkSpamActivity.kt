@@ -170,6 +170,30 @@ class MarkSpamActivity : AppCompatActivity() {
                 text = "Known numbers (${known.size})"; setOnClickListener { startActivity(Intent(context, KnownNumbersActivity::class.java)) } }, dp(8))
         }.apply { viewTreeObserver.removeOnScrollChangedListener(visibleCheck); viewTreeObserver.addOnScrollChangedListener(visibleCheck)
             post { checkVisible() } }
+        if (intent.getBooleanExtra("flow", false)) addNextBar()
+    }
+
+    /** Reached from "Scan for new spam": a bar pinned at the bottom to go on to filing (the last step of the scan). */
+    private fun addNextBar() {
+        val root = (findViewById<android.view.ViewGroup>(android.R.id.content).getChildAt(0) as? LinearLayout) ?: return
+        fun label() = Jobs.pending(Store(this)).size.let { if (it > 0) "Next: file $it report${if (it == 1) "" else "s"}  \u203A" else "Done" }
+        val btn = MaterialButton(this).apply { text = label(); textSize = 16f; minimumHeight = dp(56)
+            setOnClickListener {
+                Store(this@MarkSpamActivity).markSeen(shown)
+                val n = Jobs.pending(Store(this@MarkSpamActivity)).size
+                val p = Store(this@MarkSpamActivity).profile
+                if (n > 0 && p.complete() && p.attested) startActivity(Intent(this@MarkSpamActivity, FilingActivity::class.java))
+                else if (n > 0) startActivity(Intent(this@MarkSpamActivity, ProfileActivity::class.java))
+                finish() } }
+        // keep the count right as senders are ticked or swiped
+        val refresh = object : Runnable { override fun run() { if (isFinishing) return
+            if (lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) btn.text = label(); btn.postDelayed(this, 1500) } }
+        root.addView(LinearLayout(this).apply { setPadding(dp(16), dp(8), dp(16), dp(12))
+            setBackgroundColor(Ui.run { context.attr(android.R.attr.colorBackground) }); addView(btn, LinearLayout.LayoutParams(-1, -2)) },
+            LinearLayout.LayoutParams(-1, -2))
+        btn.post(refresh)
+        androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(root.getChildAt(root.childCount - 1)) { v, ins ->
+            v.setPadding(dp(16), dp(8), dp(16), dp(12) + ins.getInsets(androidx.core.view.WindowInsetsCompat.Type.navigationBars()).bottom); ins }
     }
 
     override fun onRestart() { super.onRestart(); render() }   // back from Known numbers / Settings
