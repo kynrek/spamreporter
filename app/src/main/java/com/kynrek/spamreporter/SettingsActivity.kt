@@ -83,6 +83,12 @@ class SettingsActivity : AppCompatActivity() {
             add(text("Numbers you swiped right on (\"not spam\") under Choose spam senders. Their future texts are never suggested or reported.",
                 12f, alpha = 0.6f), dp(4))
 
+            add(MaterialButton(this@SettingsActivity, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+                text = "Do Not Call Registry"
+                setOnClickListener { Dnc.reset(this@SettingsActivity); Dnc.ask(this@SettingsActivity) { } } })
+            add(text("Sign up or check your number on donotcall.gov. Shows the setup step again until you say you're signed up.",
+                12f, alpha = 0.6f), dp(4))
+
             add(section("Card style"))
             for (scr in CardStyle.Screen.values()) add(styleEditor(scr), dp(8))
 

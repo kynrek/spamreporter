@@ -33,7 +33,7 @@ import com.kynrek.spamreporter.Ui.text
 class MainActivity : AppCompatActivity() {
     private val store by lazy { Store(this) }
 
-    override fun onResume() { super.onResume(); render(); Community.syncInBackground(this) }
+    override fun onResume() { super.onResume(); render(); Community.syncInBackground(this); Dnc.followUp(this) { render() } }
 
     private fun render() {
         val p = store.profile
@@ -81,6 +81,10 @@ class MainActivity : AppCompatActivity() {
             }
 
             add(section("Set up"))
+            // shown until they say they're signed up / verified (Settings → Do Not Call Registry brings it back)
+            if (!Dnc.done(this@MainActivity)) add(step(look, ++n, "Do Not Call Registry", "Free. Sign up your number, or check that it's already on the list",
+                "Check" to AMBER) { Dnc.ask(this@MainActivity) { render() } })
+
             add(step(look, ++n, "Your info & attestation", if (p.complete()) "${p.first} ${p.last} · ${p.phoneDashed()}" else "Name, address, and the number that got the texts",
                 st(p.complete() && p.attested, "Done", if (p.complete()) "Attest" else "Required", RED)) { go(ProfileActivity::class.java) })
 
@@ -172,7 +176,7 @@ class MainActivity : AppCompatActivity() {
             else wipeLocal() }
         .show()
 
-    private fun wipeLocal() { run { store.wipeAll(); getSharedPreferences("pace", MODE_PRIVATE).edit().clear().apply(); FccAccount.clearLocal(this); FccLogin.forget(this); Community.wipe(this); CallBlock.wipe(this); TextBlock.wipe(this); toast("All data deleted"); render() } }
+    private fun wipeLocal() { run { store.wipeAll(); getSharedPreferences("pace", MODE_PRIVATE).edit().clear().apply(); FccAccount.clearLocal(this); FccLogin.forget(this); Community.wipe(this); CallBlock.wipe(this); TextBlock.wipe(this); Dnc.wipe(this); toast("All data deleted"); render() } }
 
     private var thenSpamFolder = false
 
