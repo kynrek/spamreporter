@@ -115,8 +115,10 @@ class MainActivity : AppCompatActivity() {
                     "Optional" to AMBER) { FccLogin.explainLock(this@MainActivity) })
             }
 
-            if (setupDone) add(fold(look, "collect", "Collect messages", "${msgs.size} texts · spam folder, choose senders, capture, blocking")) else add(section("Collect messages"))
-            if (!setupDone || "collect" in open) {
+            // Not set up yet: every step, in order. Set up: the Scan button does the importing, so only the things worth
+            // opening on their own (Choose spam senders, Capture, Block) are listed, as one-line rows under Settings.
+            if (!setupDone) {
+                add(section("Collect messages"))
                 add(step(look, ++n, "Import SMS & MMS", "${msgs.count { it.source == Source.SMS || it.source == Source.MMS }} messages read from your inbox",
                     st(smsOk && msgs.isNotEmpty(), "Imported", "Tap to import")) { importSms() })
                 if (scanOn) add(step(look, ++n, "Scan Spam & blocked folder", getSharedPreferences("scan", MODE_PRIVATE).getString("last", null)
@@ -131,7 +133,13 @@ class MainActivity : AppCompatActivity() {
                     if (CallBlock.active(this@MainActivity)) "On" to GREEN else "Optional" to AMBER) { go(BlockActivity::class.java) })
             }
 
-            if (setupDone) add(section("Settings"))
+            if (setupDone) {
+                add(section("Settings"))
+                add(linkRow(look, "Choose spam senders", "Change what's marked spam, or look back at past senders") { go(MarkSpamActivity::class.java) })
+                if (capOn) add(linkRow(look, "Capture new spam & FCC tickets", if (listenerEnabled()) "On" else "Needs access",
+                    if (listenerEnabled()) null else AMBER) { startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) })
+                add(linkRow(look, "Block spam numbers", if (CallBlock.active(this@MainActivity)) "On" else "Off · optional") { go(BlockActivity::class.java) })
+            }
             if (setupDone) add(fold(look, "report", "Report", if (left > 0) "$left to file · history, export" else "All filed · history, export")) else add(section("Report"))
             if (!setupDone || "report" in open) {
                 add(step(look, ++n, "Review senders", "${cases.count { it.category == Category.COMMERCIAL }} commercial · " +
@@ -181,6 +189,16 @@ class MainActivity : AppCompatActivity() {
     private fun go(c: Class<*>) = startActivity(Intent(this, c))
 
     private var setupOpen = false
+    /** One-line row under Settings: title · short detail, chevron; [warn] colors the detail when something needs attention. */
+    private fun linkRow(look: CardStyle.Look, title: String, detail: String, warn: Int? = null, onClick: () -> Unit) = card(12) {
+        val fg = look.fgOrNull; val k = look.scale
+        orientation = LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER_VERTICAL
+        addView(LinearLayout(context).apply { orientation = LinearLayout.VERTICAL
+            addView(text(title, 15f * k, true, fg))
+            addView(text(detail, 12f * k, color = warn ?: fg, alpha = if (warn != null) 1f else 0.7f).apply { maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END }) }, LinearLayout.LayoutParams(0, -2, 1f))
+        addView(text("\u203A", 22f * k, color = fg, alpha = 0.5f))
+    }.apply { if (look.bg != 0) setCardBackgroundColor(look.bg); isClickable = true; setOnClickListener { onClick() } }
     /** Section heading that folds its section: the usual heading text with a ▾ / ▴ arrow on the right; tap anywhere on it. */
     private fun foldHeading(title: String, isOpen: Boolean, toggle: () -> Unit) = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL; gravity = android.view.Gravity.BOTTOM
