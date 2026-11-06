@@ -88,7 +88,8 @@ class MainActivity : AppCompatActivity() {
             // all set: the section is one "Setup ✓" tab (tap to open). Inside, finished parts are one-line rows with a green
             // check; anything still to do gets its full card. Not all set: the section stays open.
             val setupDone = dncOk && infoOk && fccOk
-            add(section("Set up"))
+            // set up: the heading itself folds the section (arrow on the right) once everything is done
+            if (setupDone) add(foldHeading("Set up", setupOpen) { setupOpen = !setupOpen; render() }) else add(section("Set up"))
             if (setupDone) add(setupCard(look, fccIn))
             if (!setupDone || setupOpen) {
                 if (dncOk) add(doneRow(look, "Do Not Call Registry", p.dncRegisteredOn.ifBlank { null }?.let { "Registered since $it" } ?: "Registered") {
@@ -130,6 +131,7 @@ class MainActivity : AppCompatActivity() {
                     if (CallBlock.active(this@MainActivity)) "On" to GREEN else "Optional" to AMBER) { go(BlockActivity::class.java) })
             }
 
+            if (setupDone) add(section("Settings"))
             if (setupDone) add(fold(look, "report", "Report", if (left > 0) "$left to file · history, export" else "All filed · history, export")) else add(section("Report"))
             if (!setupDone || "report" in open) {
                 add(step(look, ++n, "Review senders", "${cases.count { it.category == Category.COMMERCIAL }} commercial · " +
@@ -179,6 +181,14 @@ class MainActivity : AppCompatActivity() {
     private fun go(c: Class<*>) = startActivity(Intent(this, c))
 
     private var setupOpen = false
+    /** Section heading that folds its section: the usual heading text with a ▾ / ▴ arrow on the right; tap anywhere on it. */
+    private fun foldHeading(title: String, isOpen: Boolean, toggle: () -> Unit) = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL; gravity = android.view.Gravity.BOTTOM
+        val h = section(title); addView(h, LinearLayout.LayoutParams(0, -2, 1f))
+        addView(text(if (isOpen) "\u25B4" else "\u25BE", 18f, color = h.currentTextColor).apply { setPadding(dp(8), 0, dp(12), dp(4)) })
+        isClickable = true; setOnClickListener { toggle() }
+        contentDescription = "$title, ${if (isOpen) "tap to fold" else "tap to show"}"
+    }
     /** Sections the user opened (once setup is done, Collect messages / Report / Privacy start folded). */
     private val open = mutableSetOf<String>()
     /** A folded section: its title and a one-line summary; tap to open or close. */
