@@ -183,13 +183,26 @@ class MainActivity : AppCompatActivity() {
     /** One-tap scan: SMS/MMS inbox first, then the Messages Spam & blocked folder. */
     private fun scanAll() { thenSpamFolder = true; importSms() }
 
+    private var importing: androidx.appcompat.app.AlertDialog? = null
+    /** Spinning circle with a message, shown while something runs; can't be dismissed by tapping outside. */
+    private fun busy(msg: String) = MaterialAlertDialogBuilder(this)
+        .setView(LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER_VERTICAL
+            setPadding(dp(24), dp(24), dp(24), dp(24))
+            addView(com.google.android.material.progressindicator.CircularProgressIndicator(context).apply { isIndeterminate = true })
+            addView(text(msg, 16f), LinearLayout.LayoutParams(-2, -2).apply { leftMargin = dp(20) }) })
+        .setCancelable(false).show()
+
     private fun importSms() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.READ_SMS), 1); return }
+        if (importing != null) return   // already running
+        val busy = busy("Importing texts…"); importing = busy
         Thread {
-            val n = store.addMessages(SmsReader.readAll(this, store.spamSenders()))
-            val toReview = MarkSpamActivity.reviewCount(this)
-            runOnUiThread { render()
+            val r = runCatching { store.addMessages(SmsReader.readAll(this, store.spamSenders())) to MarkSpamActivity.reviewCount(this) }
+            runOnUiThread { runCatching { busy.dismiss() }; importing = null
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                val (n, toReview) = r.getOrElse { toast("Couldn't import texts: ${it.message}"); thenSpamFolder = false; return@runOnUiThread }
+                render()
                 if (thenSpamFolder) { thenSpamFolder = false
                     when {
                         Sources.folderScan(this) -> { toast("Imported $n new messages"); importSpamFolder() }

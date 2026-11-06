@@ -180,7 +180,10 @@ class FccSignInActivity : AppCompatActivity() {
     }
 
     /** Load "My requests": if the FCC bounces us to sign-in, we're signed out. */
-    private fun verify() { showState(null); web.loadUrl(FccAccount.MY_REQUESTS) }
+    /** Check with the FCC whether the session is still good. If the app already knows it's signed out (never signed in, or the
+     *  session ran out), the Sign in button shows right away instead of waiting on the FCC site; the check still runs and
+     *  corrects it if needed. */
+    private fun verify() { showState(if (FccAccount.likelySignedIn(this)) null else false); web.loadUrl(FccAccount.MY_REQUESTS) }
 
     private fun startSignIn() { filledFromSaved = false; filledWith = null; typedEmail = ""; typedPassword = ""; webCard.visibility = View.VISIBLE; setHowOpen(false); status.text = "Sign in below"; detail.text = "Use your FCC complaint-center email and password."
         web.loadUrl(FccAccount.SIGN_IN_URL) }
@@ -205,7 +208,8 @@ class FccSignInActivity : AppCompatActivity() {
     private fun showState(signedIn: Boolean?) {
         chipRow.removeAllViews()
         when (signedIn) {
-            null -> { status.text = "Checking…"; detail.text = ""; signIn.isEnabled = false; signOut.isEnabled = false }
+            null -> { status.text = "Checking…"; detail.text = ""; signIn.isEnabled = false; signOut.isEnabled = false
+                if (!signingOut) { signIn.visibility = View.GONE; otherWay.visibility = View.GONE } }
             true -> {
                 chipRow.addView(chip("Signed in", GREEN))
                 status.text = "Signed in to the FCC"
