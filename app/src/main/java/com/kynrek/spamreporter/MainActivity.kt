@@ -89,9 +89,12 @@ class MainActivity : AppCompatActivity() {
             // check; anything still to do gets its full card. Not all set: the section stays open.
             val setupDone = dncOk && infoOk && fccOk
             // set up: the heading itself folds the section (arrow on the right) once everything is done
-            if (setupDone) add(foldHeading("Set up", setupOpen) { setupOpen = !setupOpen; render() }) else add(section("Set up"))
-            if (setupDone) add(setupCard(look, fccIn))
-            if (!setupDone || setupOpen) {
+            // Set up heading: "x/y" done (green when all are, amber otherwise) and a fold arrow; starts open until set up
+            val setupItems = listOf(dncOk, infoOk, fccOk, lock != FccLogin.Lock.NONE)
+            val doneN = setupItems.count { it }; val showSetup = setupOpen ?: !setupDone
+            add(foldHeading("Set up", showSetup, "$doneN/${setupItems.size}" + if (doneN == setupItems.size) " \u2713" else "",
+                if (doneN == setupItems.size) GREEN else AMBER) { setupOpen = !showSetup; render() })
+            if (showSetup) {
                 if (dncOk) add(doneRow(look, "Do Not Call Registry", p.dncRegisteredOn.ifBlank { null }?.let { "Registered since $it" } ?: "Registered") {
                         Dnc.ask(this@MainActivity) { render() } })
                 else add(step(look, ++n, "Do Not Call Registry", "Free. Sign up your number, or check that it's already on the list",
@@ -118,7 +121,7 @@ class MainActivity : AppCompatActivity() {
             // Not set up yet: every step, in order. Set up: the Scan button does the importing, so only the things worth
             // opening on their own (Choose spam senders, Capture, Block) are listed, as one-line rows under Settings.
             if (!setupDone) {
-                add(section("Collect messages"))
+                add(bigSection("Collect messages"))
                 add(step(look, ++n, "Import SMS & MMS", "${msgs.count { it.source == Source.SMS || it.source == Source.MMS }} messages read from your inbox",
                     st(smsOk && msgs.isNotEmpty(), "Imported", "Tap to import")) { importSms() })
                 if (scanOn) add(step(look, ++n, "Scan Spam & blocked folder", getSharedPreferences("scan", MODE_PRIVATE).getString("last", null)
@@ -133,14 +136,16 @@ class MainActivity : AppCompatActivity() {
                     if (CallBlock.active(this@MainActivity)) "On" to GREEN else "Optional" to AMBER) { go(BlockActivity::class.java) })
             }
 
-            if (setupDone) {
-                add(section("Settings"))
+            val showSettings = "settings" in open
+            if (setupDone) add(foldHeading("Settings", showSettings) { if (!open.remove("settings")) open += "settings"; render() })
+            if (setupDone && showSettings) {
                 add(linkRow(look, "Choose spam senders", "Change what's marked spam, or look back at past senders") { go(MarkSpamActivity::class.java) })
                 if (capOn) add(linkRow(look, "Capture new spam & FCC tickets", if (listenerEnabled()) "On" else "Needs access",
                     if (listenerEnabled()) null else AMBER) { startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) })
                 add(linkRow(look, "Block spam numbers", if (CallBlock.active(this@MainActivity)) "On" else "Off · optional") { go(BlockActivity::class.java) })
             }
-            if (setupDone) add(fold(look, "report", "Report", if (left > 0) "$left to file · history, export" else "All filed · history, export")) else add(section("Report"))
+            if (!setupDone || showSettings) {
+            if (setupDone) add(fold(look, "report", "Report", if (left > 0) "$left to file · history, export" else "All filed · history, export")) else add(bigSection("Report"))
             if (!setupDone || "report" in open) {
                 add(step(look, ++n, "Review senders", "${cases.count { it.category == Category.COMMERCIAL }} commercial · " +
                     "${cases.count { it.category == Category.POLITICAL }} political · ${cases.count { it.category == Category.SURVEY }} survey",
@@ -154,7 +159,7 @@ class MainActivity : AppCompatActivity() {
                     f.count { it.note == "imported" }.let { if (it > 0) "$it imported" to GREEN else null }) { pickHistory.launch(arrayOf("application/json", "text/plain", "*/*")) })
             }
 
-            if (setupDone) add(fold(look, "privacy", "Privacy", "Everything stays on this phone · delete all data")) else add(section("Privacy"))
+            if (setupDone) add(fold(look, "privacy", "Privacy", "Everything stays on this phone · delete all data")) else add(bigSection("Privacy"))
             if (!setupDone || "privacy" in open) {
                 add(text("Everything stays on this phone, encrypted with a key in the Android Keystore. The app has no analytics; " +
                     "it only connects to fcc.gov, ftc.gov and donotcall.gov, and blocks trackers on those pages. " +
@@ -164,6 +169,7 @@ class MainActivity : AppCompatActivity() {
                     "Your FCC password is only saved if you choose to, encrypted and unlocked with your fingerprint or PIN. Contacts (optional) are only compared on this phone.", 13f, alpha = 0.7f))
                 add(MaterialButton(context, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
                     text = "Delete all my data"; setTextColor(RED); setOnClickListener { confirmWipe() } }, dp(8))
+            }
             }
 
             MessagesAccessibilityService.lastStatus.takeIf { it.isNotBlank() && it != "idle" }?.let { add(text("Spam-folder import: $it", 12f, alpha = 0.5f), dp(12)) }
@@ -188,7 +194,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun go(c: Class<*>) = startActivity(Intent(this, c))
 
-    private var setupOpen = false
+    private var setupOpen: Boolean? = null   // null = default (open until setup is complete)
     /** One-line row under Settings: title · short detail, chevron; [warn] colors the detail when something needs attention. */
     private fun linkRow(look: CardStyle.Look, title: String, detail: String, warn: Int? = null, onClick: () -> Unit) = card(12) {
         val fg = look.fgOrNull; val k = look.scale
@@ -200,13 +206,17 @@ class MainActivity : AppCompatActivity() {
         addView(text("\u203A", 22f * k, color = fg, alpha = 0.5f))
     }.apply { if (look.bg != 0) setCardBackgroundColor(look.bg); isClickable = true; setOnClickListener { onClick() } }
     /** Section heading that folds its section: the usual heading text with a ▾ / ▴ arrow on the right; tap anywhere on it. */
-    private fun foldHeading(title: String, isOpen: Boolean, toggle: () -> Unit) = LinearLayout(this).apply {
-        orientation = LinearLayout.HORIZONTAL; gravity = android.view.Gravity.BOTTOM
-        val h = section(title); addView(h, LinearLayout.LayoutParams(0, -2, 1f))
-        addView(text(if (isOpen) "\u25B4" else "\u25BE", 18f, color = h.currentTextColor).apply { setPadding(dp(8), 0, dp(12), dp(4)) })
+    /** Section heading that folds its section: title, optional "x/y" badge, and a ▾ / ▴ arrow; tap anywhere on it. */
+    private fun foldHeading(title: String, isOpen: Boolean, badge: String? = null, badgeColor: Int = GREEN, toggle: () -> Unit) = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER_VERTICAL
+        val h = bigSection(title); addView(h, LinearLayout.LayoutParams(0, -2, 1f))
+        badge?.let { addView(com.kynrek.spamreporter.Ui.run { context.chip(it, badgeColor) }, LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(10) }) }
+        addView(text(if (isOpen) "\u25B4" else "\u25BE", 20f, color = h.currentTextColor).apply { setPadding(dp(10), dp(12), dp(12), 0) })
         isClickable = true; setOnClickListener { toggle() }
-        contentDescription = "$title, ${if (isOpen) "tap to fold" else "tap to show"}"
+        contentDescription = "$title${badge?.let { ", $it done" } ?: ""}, ${if (isOpen) "tap to fold" else "tap to show"}"
     }
+    /** A section heading a little bigger than the plain ones. */
+    private fun bigSection(title: String) = section(title).apply { textSize = 15f; letterSpacing = 0.06f }
     /** Sections the user opened (once setup is done, Collect messages / Report / Privacy start folded). */
     private val open = mutableSetOf<String>()
     /** A folded section: its title and a one-line summary; tap to open or close. */
@@ -233,19 +243,6 @@ class MainActivity : AppCompatActivity() {
         addView(text("\u203A", 22f * k, color = fg, alpha = 0.5f))
     }.apply { if (look.bg != 0) setCardBackgroundColor(look.bg)
         isClickable = true; setOnClickListener { onClick() } }
-    /** Collapsed "Setup complete" card with a green check; tap to show or hide the setup steps. */
-    private fun setupCard(look: CardStyle.Look, fccIn: Boolean) = card(14) {
-        val fg = look.fgOrNull; val k = look.scale
-        orientation = LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER_VERTICAL
-        addView(check(k, 18),
-            LinearLayout.LayoutParams(dp((34 * k).toInt()), dp((34 * k).toInt())).apply { rightMargin = dp(14) })
-        addView(LinearLayout(context).apply { orientation = LinearLayout.VERTICAL
-            addView(text("Setup complete", 16f * k, true, fg))
-            addView(text(if (setupOpen) "Tap to hide" else "Do Not Call · your info · FCC " + (if (fccIn) "signed in" else "signs in when filing") +
-                " · tap to show", 13f * k, color = fg, alpha = 0.75f)) }, LinearLayout.LayoutParams(0, -2, 1f))
-        addView(text(if (setupOpen) "\u25B4" else "\u25BE", 20f * k, color = fg, alpha = 0.6f))
-    }.apply { if (look.bg != 0) setCardBackgroundColor(look.bg)
-        isClickable = true; setOnClickListener { setupOpen = !setupOpen; render() } }
     private fun toast(s: String) = Toast.makeText(this, s, Toast.LENGTH_LONG).show()
 
     private fun export() {
