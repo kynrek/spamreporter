@@ -185,6 +185,18 @@ class FilingActivity : AppCompatActivity() {
             window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
     }
 
+    /** Unlock the saved FCC sign-in (fingerprint / PIN — the saved password can't be read without it), sign in on the FCC's
+     *  own page in lane 1, and confirm by landing on "My requests". Any failure just files without signing in. */
+    private suspend fun autoSignIn() {
+        log("Signing in to the FCC…", "Unlock with your fingerprint or PIN to use your saved sign-in.")
+        val creds = suspendCancellableCoroutine<Pair<String, String>?> { k ->
+            FccLogin.unlock(this, "Sign in to the FCC to file faster", { k.resume(runCatching { FccLogin.load(this) }.getOrNull()) {} },
+                { k.resume(null) {} }) } ?: run { log("Not signed in", "Filing without signing in."); return }
+        val ok = runCatching { lanes[0].signIn(creds.first, creds.second) }.getOrDefault(false)
+        if (ok) { CookieManager.getInstance().flush(); FccAccount.markSignedIn(this) }
+        log(if (ok) "Signed in to the FCC" else "Couldn't sign in automatically", if (ok) "" else "Filing without signing in. You can sign in from FCC account on the home screen.")
+    }
+
     private suspend fun runQueueInner() {
         val p = store.profile
         val queue = Jobs.pending(store)   // only texts not yet reported to each agency
@@ -193,6 +205,9 @@ class FilingActivity : AppCompatActivity() {
             val u = runCatching { lanes[0].load(FccAccount.MY_REQUESTS) }.getOrDefault("")
             if (!FccAccount.isSignedInPage(u)) FccAccount.markSignedOut(this)
         }
+        // signed out but a sign-in is saved: one fingerprint/PIN unlock, then sign in quietly here and file at full speed
+        if (!FccAccount.likelySignedIn(this) && queue.any { it.agency == Agency.FCC } && FccLogin.saved(this) && FccLogin.autoEnabled(this))
+            autoSignIn()
         val signedIn = FccAccount.likelySignedIn(this)
         log("${queue.size} reports to file" + if (lanes.size > 1) " · ${lanes.size} at a time" else "", if (signedIn)
             "Signed in to the FCC (${FccAccount.untilText(this)}) — no hourly limit."
@@ -330,6 +345,16 @@ class FilingActivity : AppCompatActivity() {
             web.loadUrl(url); return withTimeout(60_000) { firstOf() } }
         /** First paint, or (when nothing is painted because the screen is off / app in background) page finished. */
         private suspend fun firstOf(): String = kotlinx.coroutines.selects.select { commits.onReceive { it }; pages.onReceive { it } }
+        /** Fill and submit the FCC sign-in form with a saved sign-in; true once "My requests" opens (signed in). */
+        suspend fun signIn(email: String, password: String): Boolean {
+            load(FccAccount.SIGN_IN_URL)
+            var filled = false
+            for (i in 0 until 40) { if (evalSync(FccLogin.fillJs(email, password)) == "true") { filled = true; break }; delay(250) }
+            if (!filled) return false
+            delay(400); while (pages.tryReceive().isSuccess) {}
+            if (evalSync(FccLogin.SUBMIT_JS) != "true") return false
+            return withTimeoutOrNull(30_000) { while (true) { val u = pages.receive(); if (FccAccount.isSignedInPage(u)) return@withTimeoutOrNull true } ; false } == true
+        }
         suspend fun load(url: String): String { while (pages.tryReceive().isSuccess) {}; web.loadUrl(url); return withTimeout(60_000) { pages.receive() } }
         private suspend fun runScript(asset: String, payload: JSONObject, step: String? = null): JSONObject {
             while (results.tryReceive().isSuccess) {}

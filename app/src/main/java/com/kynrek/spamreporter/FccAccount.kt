@@ -28,7 +28,13 @@ object FccAccount {
     /** Best estimate without a network call; FilingActivity / FccSignInActivity verify for real. */
     fun likelySignedIn(c: Context) = expiresAt(c) > System.currentTimeMillis()
 
-    fun markSignedIn(c: Context) { if (!likelySignedIn(c)) prefs(c).edit().putLong("at", System.currentTimeMillis()).apply() }
+    fun markSignedIn(c: Context) { if (!likelySignedIn(c)) prefs(c).edit().putLong("at", System.currentTimeMillis()).apply()
+        c.getSharedPreferences("settings", Context.MODE_PRIVATE).edit().putBoolean("fcc_had_account", true).apply() }
+    /** This phone has an FCC account: it signed in before, or a sign-in is saved. Then "signed out" means "sign back in",
+     *  not "consider making an account". Kept across sign-outs; "Delete all my data" clears it. */
+    fun hasAccount(c: Context) = c.getSharedPreferences("settings", Context.MODE_PRIVATE).getBoolean("fcc_had_account", false) ||
+        FccLogin.saved(c) || FccLogin.savedEmail(c) != null
+    fun forgetAccount(c: Context) = c.getSharedPreferences("settings", Context.MODE_PRIVATE).edit().remove("fcc_had_account").apply()
     fun markSignedOut(c: Context) = prefs(c).edit().clear().apply()
 
     /** True if this URL means we're looking at account pages rather than being bounced to sign-in. */

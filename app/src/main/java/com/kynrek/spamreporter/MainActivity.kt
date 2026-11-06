@@ -80,26 +80,38 @@ class MainActivity : AppCompatActivity() {
                 }, dp(12))
             }
 
-            add(section("Set up"))
-            // shown until they say they're signed up / verified (Settings → Do Not Call Registry brings it back)
-            if (!Dnc.done(this@MainActivity)) add(step(look, ++n, "Do Not Call Registry", "Free. Sign up your number, or check that it's already on the list",
-                "Check" to AMBER) { Dnc.ask(this@MainActivity) { render() } })
-
-            add(step(look, ++n, "Your info & attestation", if (p.complete()) "${p.first} ${p.last} · ${p.phoneDashed()}" else "Name, address, and the number that got the texts",
-                st(p.complete() && p.attested, "Done", if (p.complete()) "Attest" else "Required", RED)) { go(ProfileActivity::class.java) })
-
-            add(step(look, ++n, "FCC account (recommended)", if (FccAccount.likelySignedIn(this@MainActivity))
-                    "Signed in ${FccAccount.untilText(this@MainActivity)} · tap to sign out"
-                    else "Recommended: signing in files reports much faster, with no FCC hourly limit. Lasts ~${FccAccount.SESSION_HOURS} hours.",
-                if (FccAccount.likelySignedIn(this@MainActivity)) "Signed in" to GREEN else "Recommended" to AMBER) { go(FccSignInActivity::class.java) })
-
+            val fccIn = FccAccount.likelySignedIn(this@MainActivity); val fccBack = !fccIn && FccAccount.hasAccount(this@MainActivity)
+            val fccAuto = FccLogin.saved(this@MainActivity) && FccLogin.autoEnabled(this@MainActivity)
             val lock = FccLogin.lock(this@MainActivity)
-            add(step(look, ++n, "Fingerprint / PIN (optional)", when (lock) {
-                    FccLogin.Lock.FINGERPRINT -> "Fingerprint is set up · locks your saved FCC sign-in"
-                    FccLogin.Lock.PIN_ONLY -> "PIN is set up · add a fingerprint to unlock your saved FCC sign-in with a touch"
-                    FccLogin.Lock.NONE -> "Only needed to save your FCC sign-in · tap to set up a fingerprint or PIN" },
-                when (lock) { FccLogin.Lock.FINGERPRINT -> "On" to GREEN; FccLogin.Lock.PIN_ONLY -> "PIN only" to GREEN; FccLogin.Lock.NONE -> "Optional" to AMBER }) {
-                FccLogin.explainLock(this@MainActivity) })
+            val dncOk = Dnc.done(this@MainActivity); val infoOk = p.complete() && p.attested; val fccOk = fccIn || fccAuto
+            // all set: the section is one "Setup ✓" tab (tap to open). Inside, finished parts are one-line rows with a green
+            // check; anything still to do gets its full card. Not all set: the section stays open.
+            val setupDone = dncOk && infoOk && fccOk
+            add(section("Set up"))
+            if (setupDone) add(setupCard(look, fccIn))
+            if (!setupDone || setupOpen) {
+                if (dncOk) add(doneRow(look, "Do Not Call Registry", p.dncRegisteredOn.ifBlank { null }?.let { "Registered since $it" } ?: "Registered") {
+                        Dnc.ask(this@MainActivity) { render() } })
+                else add(step(look, ++n, "Do Not Call Registry", "Free. Sign up your number, or check that it's already on the list",
+                    "Check" to AMBER) { Dnc.ask(this@MainActivity) { render() } })
+
+                if (infoOk) add(doneRow(look, "Your info & attestation", "${p.first} ${p.last} · ${p.phoneDashed()}") { go(ProfileActivity::class.java) })
+                else add(step(look, ++n, "Your info & attestation", if (p.complete()) "${p.first} ${p.last} · ${p.phoneDashed()}" else "Name, address, and the number that got the texts",
+                    if (p.complete()) "Attest" to AMBER else "Required" to RED) { go(ProfileActivity::class.java) })
+
+                if (fccOk) add(doneRow(look, "FCC account", if (fccIn) "Signed in ${FccAccount.untilText(this@MainActivity)}"
+                        else "Signs in automatically with your saved password when you file") { go(FccSignInActivity::class.java) })
+                else add(step(look, ++n, if (fccBack) "FCC account" else "FCC account (recommended)", when {
+                        fccBack -> "Signed out · tap to sign back in" + (if (FccLogin.saved(this@MainActivity)) " with your saved password" else "") +
+                            ". Signed in, reports file much faster, with no FCC hourly limit."
+                        else -> "Recommended: signing in files reports much faster, with no FCC hourly limit. Lasts ~${FccAccount.SESSION_HOURS} hours." },
+                    if (fccBack) "Sign back in" to AMBER else "Recommended" to AMBER) { go(FccSignInActivity::class.java) })
+
+                if (lock != FccLogin.Lock.NONE) add(doneRow(look, "Fingerprint / PIN", if (lock == FccLogin.Lock.FINGERPRINT) "Fingerprint is set up" else "PIN is set up") {
+                        FccLogin.explainLock(this@MainActivity) })
+                else add(step(look, ++n, "Fingerprint / PIN (optional)", "Only needed to save your FCC sign-in · tap to set up a fingerprint or PIN",
+                    "Optional" to AMBER) { FccLogin.explainLock(this@MainActivity) })
+            }
 
             add(section("Collect messages"))
             add(step(look, ++n, "Import SMS & MMS", "${msgs.count { it.source == Source.SMS || it.source == Source.MMS }} messages read from your inbox",
@@ -157,6 +169,35 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun go(c: Class<*>) = startActivity(Intent(this, c))
+
+    private var setupOpen = false
+    private fun check(k: Float, size: Int) = android.widget.TextView(this).apply { text = "\u2713"; gravity = android.view.Gravity.CENTER
+        textSize = size * k; setTextColor(0xFFFFFFFF.toInt()); typeface = android.graphics.Typeface.DEFAULT_BOLD
+        background = android.graphics.drawable.GradientDrawable().apply { shape = android.graphics.drawable.GradientDrawable.OVAL; setColor(GREEN) } }
+    /** A finished setup step, collapsed to one line: green check, title, short detail. Tap opens it like the full step. */
+    private fun doneRow(look: CardStyle.Look, title: String, detail: String, onClick: () -> Unit) = card(10) {
+        val fg = look.fgOrNull; val k = look.scale
+        orientation = LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER_VERTICAL
+        addView(check(k, 13), LinearLayout.LayoutParams(dp((24 * k).toInt()), dp((24 * k).toInt())).apply { rightMargin = dp(12) })
+        addView(text(title, 14f * k, true, fg), LinearLayout.LayoutParams(-2, -2))
+        addView(text("  ·  $detail", 13f * k, color = fg, alpha = 0.7f).apply { maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END },
+            LinearLayout.LayoutParams(0, -2, 1f))
+        addView(text("\u203A", 22f * k, color = fg, alpha = 0.5f))
+    }.apply { if (look.bg != 0) setCardBackgroundColor(look.bg)
+        isClickable = true; setOnClickListener { onClick() } }
+    /** Collapsed "Setup complete" card with a green check; tap to show or hide the setup steps. */
+    private fun setupCard(look: CardStyle.Look, fccIn: Boolean) = card(14) {
+        val fg = look.fgOrNull; val k = look.scale
+        orientation = LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER_VERTICAL
+        addView(check(k, 18),
+            LinearLayout.LayoutParams(dp((34 * k).toInt()), dp((34 * k).toInt())).apply { rightMargin = dp(14) })
+        addView(LinearLayout(context).apply { orientation = LinearLayout.VERTICAL
+            addView(text("Setup complete", 16f * k, true, fg))
+            addView(text(if (setupOpen) "Tap to hide" else "Do Not Call · your info · FCC " + (if (fccIn) "signed in" else "signs in when filing") +
+                " · tap to show", 13f * k, color = fg, alpha = 0.75f)) }, LinearLayout.LayoutParams(0, -2, 1f))
+        addView(text(if (setupOpen) "\u25B4" else "\u25BE", 20f * k, color = fg, alpha = 0.6f))
+    }.apply { if (look.bg != 0) setCardBackgroundColor(look.bg)
+        isClickable = true; setOnClickListener { setupOpen = !setupOpen; render() } }
     private fun toast(s: String) = Toast.makeText(this, s, Toast.LENGTH_LONG).show()
 
     private fun export() {
@@ -176,7 +217,7 @@ class MainActivity : AppCompatActivity() {
             else wipeLocal() }
         .show()
 
-    private fun wipeLocal() { run { store.wipeAll(); getSharedPreferences("pace", MODE_PRIVATE).edit().clear().apply(); FccAccount.clearLocal(this); FccLogin.forget(this); Community.wipe(this); CallBlock.wipe(this); TextBlock.wipe(this); Dnc.wipe(this); toast("All data deleted"); render() } }
+    private fun wipeLocal() { run { store.wipeAll(); getSharedPreferences("pace", MODE_PRIVATE).edit().clear().apply(); FccAccount.clearLocal(this); FccLogin.forget(this); Community.wipe(this); CallBlock.wipe(this); TextBlock.wipe(this); Dnc.wipe(this); FccAccount.forgetAccount(this); toast("All data deleted"); render() } }
 
     private var thenSpamFolder = false
 

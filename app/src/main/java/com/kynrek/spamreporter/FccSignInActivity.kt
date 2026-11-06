@@ -9,6 +9,7 @@ import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
+import com.kynrek.spamreporter.Ui.AMBER
 import com.kynrek.spamreporter.Ui.GREEN
 import com.kynrek.spamreporter.Ui.GREY
 import com.kynrek.spamreporter.Ui.add
@@ -218,9 +219,11 @@ class FccSignInActivity : AppCompatActivity() {
                 skipSaved = false
             }
             false -> {
-                chipRow.addView(chip("Not signed in", GREY))
-                status.text = "Not signed in"
-                detail.text = "Recommended: signing in lets the app file reports much faster, with no hourly limit. A sign-in lasts about ${FccAccount.SESSION_HOURS} hours."
+                val back = FccAccount.hasAccount(this)
+                chipRow.addView(chip(if (back) "Signed out" else "Not signed in", if (back) AMBER else GREY))
+                status.text = if (back) "Signed out — sign back in" else "Not signed in"
+                detail.text = if (back) "Your FCC sign-in ends after about ${FccAccount.SESSION_HOURS} hours. Sign back in to file reports much faster, with no hourly limit."
+                    else "Recommended: signing in lets the app file reports much faster, with no hourly limit. A sign-in lasts about ${FccAccount.SESSION_HOURS} hours."
                 signIn.visibility = View.VISIBLE; signIn.isEnabled = true; signOut.visibility = View.GONE
                 val quick = FccLogin.saved(this) && FccLogin.autoEnabled(this)
                 signIn.text = if (quick) "Sign in again with saved password" else "Sign in to FCC"
