@@ -49,7 +49,7 @@ object Jobs {
             .filter { Phone.isTenDigit(it.sender) && Phone.digits(it.sender) in spam && it.body.isNotBlank() }
             .filter { m -> upTo[Phone.digits(m.sender)]?.let { m.ts <= it } ?: true }
             .groupBy { Phone.digits(it.sender) }
-            .map { (d, ms) -> SenderCase(Phone.dashed(d), ms.sortedBy { it.ts }, cats[d] ?: Classifier.classify(ms.map { it.body })) }
+            .map { (d, ms) -> SenderCase(Phone.dashed(d), ms.sortedBy { it.ts }, cats[d] ?: Classifier.classifySpam(ms.map { it.body })) }
             .sortedByDescending { it.last.ts }
     }
 

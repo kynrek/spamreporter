@@ -29,6 +29,13 @@ object Classifier {
         }
     }
 
+    /**
+     * Category for a sender the user marked spam: the keyword guess, but never "Don't file" — texts with no telltale
+     * words (scams, phishing, "wrong number" openers) are filed as commercial, with "Other" as the FCC goods type.
+     * Only the user can pick "Don't file" (on Review senders).
+     */
+    fun classifySpam(bodies: List<String>): Category = classify(bodies).let { if (it == Category.IGNORE) Category.COMMERCIAL else it }
+
     /** FCC "Type of Property, Goods, or Services" option for commercial texts. */
     fun fccGoodsCategory(bodies: List<String>): String {
         val t = bodies.joinToString(" ").lowercase()

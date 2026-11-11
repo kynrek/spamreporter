@@ -102,7 +102,7 @@ object Community {
         return all.filter { m -> val d = Phone.digits(m.sender)
             d in spam && m.key() !in done && cats[d] != Category.IGNORE && (remember || m.ts <= (marks[d] ?: Long.MAX_VALUE))
         }.groupBy { Phone.digits(it.sender) }.flatMap { (d, ms) ->   // same category the filing uses: yours, else the classifier's
-            val cat = cats[d] ?: Classifier.classify(bySender[d].orEmpty().map { it.body })
+            val cat = cats[d] ?: Classifier.classifySpam(bySender[d].orEmpty().map { it.body })
             ms.map { it to cat } }
     }
 
