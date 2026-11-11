@@ -7,10 +7,12 @@ const sl = ms => new Promise(r => setTimeout(r, ms));
 // wait for a condition instead of fixed pauses: polls every 30 ms
 const until = async (fn, ms = 4000) => { const t0 = Date.now(); let v; while (!(v = fn())) { if (Date.now() - t0 > ms) return null; await sl(30) } return v };
 const vis = e => e && e.offsetParent !== null;
-await until(() => document.querySelector('[role=combobox]'), 20000);
+// the FCC serves two versions of the form: the new one (role=combobox) and the classic Zendesk one (a.nesty-input + hidden input)
+const DD = '[role=combobox],a.nesty-input';
+await until(() => document.querySelector(DD), 20000);
 const show = async (el, ms = 450) => { if (!el || !P.watch) return; el.scrollIntoView({ block: 'center', behavior: 'smooth' }); el.style.outline = '3px solid #f5b400'; el.style.outlineOffset = '2px'; await sl(ms); setTimeout(() => { el.style.outline = '' }, 1500) };  // watch mode: bring each field into view as it's filled
 const lab = c => { const id = (c.getAttribute('aria-labelledby') || '').split(' ')[0]; return ((document.getElementById(id) || {}).innerText || c.getAttribute('aria-label') || '').trim() };
-const combos = () => [...document.querySelectorAll('[role=combobox]')].filter(c => c.offsetParent !== null);
+const combos = () => [...document.querySelectorAll(DD)].filter(c => c.offsetParent !== null);
 const has = l => combos().some(c => lab(c).startsWith(l));
 const match = t => o => { const x = o.innerText.trim(); return x == t || (t.endsWith('*') && x.startsWith(t.slice(0, -1))) };
 const pick = async (l, t) => {
@@ -65,11 +67,14 @@ try {
   await set('Additional Information', P.add);
   await set('Your First Name', U.first); await set('Your Last Name', U.last); await set('Address 1', U.address1);
   if (U.address2) await set('Address 2', U.address2); await set('City', U.city); await set('Zip Code', U.zip); await set('Phone (where', U.phone);
-  const ed = document.querySelector('.ck-editor__editable'); await show(ed);
-  ed.ckeditorInstance.setData(P.desc.split('\n').map(l => '<p>' + (l.replace(/&/g, '&amp;').replace(/</g, '&lt;') || '&nbsp;') + '</p>').join(''));  // one paragraph per line
+  const ed = document.querySelector('.ck-editor__editable');
+  if (ed && ed.ckeditorInstance) { await show(ed);
+    ed.ckeditorInstance.setData(P.desc.split('\n').map(l => '<p>' + (l.replace(/&/g, '&amp;').replace(/</g, '&lt;') || '&nbsp;') + '</p>').join(''));  // one paragraph per line
+  } else await set('Description', P.desc);   // classic form: a plain-text textarea (its maxlength is respected by set)
   const att = inp('Attest'); await show(att); if (!att.checked) att.click(); await until(() => att.checked, 1000);
   const empty = combos().filter(c => (c.innerText || '').trim().startsWith('-')).map(c => lab(c).slice(0, 40));
-  const b = document.querySelector('form button[type=submit]'); b.scrollIntoView({ block: 'center' }); if (P.watch) { b.style.outline = '4px solid #d7263d'; await sl(1200) } else await Promise.race([new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))), sl(150)]);  // layout settled after scroll (no frames come while the screen is off, so don't wait for them forever)
+  const form = document.querySelector('[name="request[description]"]').form;   // the request form, not the page's search form
+  const b = form.querySelector('button[type=submit],input[type=submit]'); b.scrollIntoView({ block: 'center' }); if (P.watch) { b.style.outline = '4px solid #d7263d'; await sl(1200) } else await Promise.race([new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))), sl(150)]);  // layout settled after scroll (no frames come while the screen is off, so don't wait for them forever)
   const r = b.getBoundingClientRect();
   const ok = !!inp('Date of Your Issue').value && document.querySelector('[name="request[description]"]').value.length > 20 && att.checked && empty.length == 0;
   return JSON.stringify({ ok, empty, x: r.left + r.width / 2, y: r.top + r.height / 2, dpr: window.devicePixelRatio });
