@@ -24,6 +24,8 @@ class HistoryActivity : AppCompatActivity() {
     private var filter: Agency? = null
 
     override fun onCreate(b: Bundle?) { super.onCreate(b); render() }
+    override fun onRequestPermissionsResult(rc: Int, p: Array<out String>, r: IntArray) {
+        super.onRequestPermissionsResult(rc, p, r); SpamReply.onPermission(this, rc) { render() } }
 
     private fun render() {
         val store = Store(this)
@@ -51,6 +53,13 @@ class HistoryActivity : AppCompatActivity() {
                     addView(text("Received ${fmt.format(Date(ts))}", 12f, alpha = 0.6f), lp(top = dp(6)))
                     addView(text(body.trim(), 14f, alpha = 0.9f).apply { setTextIsSelectable(true) })
                 }
+                if (Phone.isTenDigit(f.sender)) addView(LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL
+                    gravity = android.view.Gravity.CENTER_VERTICAL
+                    val at = SpamReply.sentAt(context, Phone.digits(f.sender))
+                    addView(text(if (at > 0) "Replied ${fmt.format(Date(at))}" else "", 12f, alpha = 0.6f), LinearLayout.LayoutParams(0, -2, 1f))
+                    addView(MaterialButton(context, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+                        text = "Reply"; setOnClickListener { SpamReply.show(this@HistoryActivity, f.sender) { render() } } })
+                }, lp(top = dp(8)))
             })
             if (list.isEmpty()) add(text("No reports yet.", 14f, alpha = 0.6f), dp(16))
         }

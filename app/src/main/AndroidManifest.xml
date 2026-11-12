@@ -2,6 +2,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.READ_SMS" />
+    <!-- Optional: send the Do Not Call reply (Settings -> Reply to spammers; asked for only when you send one). -->
+    <uses-permission android:name="android.permission.SEND_SMS" />
     <!-- Optional: contacts are treated as "not spam" (numbers compared on the phone only). -->
     <uses-permission android:name="android.permission.READ_CONTACTS" />
     <!-- Optional saved FCC sign-in is unlocked with fingerprint / face / PIN. -->

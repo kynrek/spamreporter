@@ -48,5 +48,6 @@ class CaptureNotificationListener : NotificationListenerService() {
         // our subject format: "... from 555-010-0001 to 555-010-0002" — first number is the sender
         val sender = numRe.find(text)?.let { it.groupValues[1] + it.groupValues[2] + it.groupValues[3] } ?: return
         Store(this).attachFccTicket(sender, ticket)
+        SpamReply.autoSend(this, sender)
     }
 }

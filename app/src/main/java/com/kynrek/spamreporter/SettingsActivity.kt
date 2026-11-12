@@ -197,6 +197,34 @@ class SettingsActivity : AppCompatActivity() {
                 }, lp(top = dp(8)))
             }, dp(8))
 
+            add(section("Reply to spammers"))
+            add(card {
+                val me = this@SettingsActivity; val cur = SpamReply.mode(me)
+                addView(text("Reply button", 16f, true))
+                addView(text("Report history has a Reply button on each report. It drafts a text saying your number is on the Do Not Call " +
+                    "list (with the date from Your info), that their texts break the Do Not Call rules (TCPA, 47 U.S.C. § 227(c); " +
+                    "47 C.F.R. § 64.1200), and your FCC ticket and FTC report numbers. You can always edit it first.\n\n" +
+                    "Ask me: you tap Send, Copy or Open in Messages.\n" +
+                    "Send automatically: also sent by itself once every report for a sender's newest texts has its number " +
+                    "(FCC numbers arrive by email, so capture needs to be on). One reply per batch of reports.\n" +
+                    "Copy only: the app never sends; copy the text or open it in Messages.\n\n" +
+                    "Replying tells spammers your number is active, and spam numbers are often faked, so a reply can reach " +
+                    "someone who didn't send the text.", 13f, alpha = 0.7f), lp(top = dp(4)))
+                addView(com.google.android.material.button.MaterialButtonToggleGroup(context).apply {
+                    isSingleSelection = true; isSelectionRequired = true
+                    val ids = SpamReply.Mode.values().associateBy { android.view.View.generateViewId() }
+                    for ((id, m) in ids) addView(MaterialButton(context, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+                        this.id = id; text = m.label; textSize = 12f; setPadding(0, 0, 0, 0) }, LinearLayout.LayoutParams(0, -2, 1f))
+                    check(ids.entries.first { it.value == cur }.key)
+                    addOnButtonCheckedListener { _, id, on -> val m = ids[id]; if (!on || m == null || m == SpamReply.mode(me)) return@addOnButtonCheckedListener
+                        SpamReply.setMode(me, m)
+                        if (m == SpamReply.Mode.AUTO && !SpamReply.canSend(me)) requestPermissions(arrayOf(android.Manifest.permission.SEND_SMS), SpamReply.REQ)
+                        render() }
+                }, lp(top = dp(8)))
+                if (cur == SpamReply.Mode.AUTO && !SpamReply.canSend(me)) addView(chip("SMS permission needed ›", AMBER).apply { isClickable = true
+                    setOnClickListener { requestPermissions(arrayOf(android.Manifest.permission.SEND_SMS), SpamReply.REQ) } }, LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(8) })
+            }, dp(8))
+
             add(section("FCC sign-in"))
             add(toggle("Save FCC password",
                 "After you sign in, offer to save your FCC email and password on this phone, encrypted and unlocked only with your " +

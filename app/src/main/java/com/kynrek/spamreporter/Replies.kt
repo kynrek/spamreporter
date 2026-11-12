@@ -11,7 +11,7 @@ import android.provider.Telephony
 object Replies {
     private val OPT_OUT = setOf("STOP", "STOPALL", "STOP ALL", "UNSUBSCRIBE", "CANCEL", "END", "QUIT", "OPTOUT", "OPT OUT",
         "REVOKE", "REMOVE", "STOP PLEASE", "PLEASE STOP", "STOP TEXTING", "STOP TEXTING ME", "UNSUB", "NO", "N")
-    fun isOptOut(body: String) = body.uppercase().replace(Regex("[^A-Z ]"), " ").replace(Regex("\\s+"), " ").trim() in OPT_OUT
+    fun isOptOut(body: String) = SpamReply.isOurs(body) || body.uppercase().replace(Regex("[^A-Z ]"), " ").replace(Regex("\\s+"), " ").trim() in OPT_OUT
 
     private fun prefs(c: Context) = c.getSharedPreferences("settings", Context.MODE_PRIVATE)
     fun enabled(c: Context) = prefs(c).getBoolean("replied_not_spam", true)

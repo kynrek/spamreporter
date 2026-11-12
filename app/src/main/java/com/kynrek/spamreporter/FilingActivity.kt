@@ -250,7 +250,8 @@ class FilingActivity : AppCompatActivity() {
                 done++
                 if (BuildConfig.DEBUG) android.util.Log.i("SpamReporter", "filing $agency ${c.dashed}: ${r.take(200)}")
                 val why = r.removePrefix("error:").take(100)
-                if (r.startsWith("ok:")) { failedInARow = 0; filed++ } else { failedInARow++; failures += "$agency ${c.dashed}: $why" }
+                if (r.startsWith("ok:")) { failedInARow = 0; filed++
+                    SpamReply.autoSend(this@FilingActivity, c.dashed) } else { failedInARow++; failures += "$agency ${c.dashed}: $why" }
                 lane.end(r.startsWith("ok:"))
                 // Only a real FCC rate limit, or several failures in a row (site trouble), drops to one lane. A single form
                 // error or timeout doesn't slow the other lanes; that report is just retried next run.
